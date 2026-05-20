@@ -1,3 +1,4 @@
+// MC Server GUI
 import { Router, Request, Response } from "express";
 import path from "path";
 import { readdirSync, statSync, existsSync, renameSync, unlinkSync, writeFileSync, readFileSync } from "fs";
@@ -303,3 +304,4 @@ router.post("/:serverId/mods/update-all", async (req: Request, res: Response) =>
 });
 
 export { router as modsRouter };
+

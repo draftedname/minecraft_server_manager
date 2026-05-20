@@ -1,3 +1,4 @@
+// MC Server GUI
 import { useState, useCallback } from "react";
 import api from "@/lib/api";
 
@@ -84,3 +85,4 @@ export function useChunkedUpload() {
 
   return { ...state, upload };
 }
+

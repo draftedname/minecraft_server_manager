@@ -1,3 +1,4 @@
+// MC Server GUI
 import { readdir, mkdir, copyFile, readFile, writeFile } from "fs/promises";
 import path from "path";
 
@@ -73,3 +74,4 @@ export async function copyReadable(
     await copyReadable(d.srcPath, d.destPath, concurrency);
   }
 }
+

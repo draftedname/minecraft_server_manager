@@ -1,3 +1,4 @@
+// MC Server GUI
 import express from "express";
 import cors from "cors";
 import { createServer } from "http";
@@ -69,3 +70,4 @@ process.on("SIGINT", () => {
   stopScheduler();
   process.exit(0);
 });
+

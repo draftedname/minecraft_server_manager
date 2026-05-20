@@ -1,3 +1,4 @@
+// MC Server GUI
 import { Router, Request, Response } from "express";
 import path from "path";
 import {
@@ -194,3 +195,4 @@ router.post("/:serverId/files/upload", (req: Request, res: Response) => {
 });
 
 export { router as filesRouter };
+

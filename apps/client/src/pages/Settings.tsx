@@ -1,3 +1,4 @@
+// MC Server GUI
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -203,3 +204,4 @@ export default function SettingsPage() {
     </div>
   );
 }
+

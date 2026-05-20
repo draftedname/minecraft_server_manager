@@ -1,3 +1,4 @@
+// MC Server GUI
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import path from "path";
 import { SERVERS_FILE, SERVERS_DIR } from "./config.js";
@@ -86,3 +87,4 @@ export function ensureServerDir(id: string): string {
 export function getServerDir(id: string): string {
   return path.join(SERVERS_DIR, id);
 }
+

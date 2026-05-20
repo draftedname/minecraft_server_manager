@@ -1,3 +1,4 @@
+// MC Server GUI
 import { execSync } from "child_process";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import path from "path";
@@ -128,3 +129,4 @@ export function getJavaPath(version?: string): string | null {
   }
   return null;
 }
+

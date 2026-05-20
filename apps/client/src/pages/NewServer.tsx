@@ -1,3 +1,4 @@
+// MC Server GUI
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -438,3 +439,4 @@ export default function NewServer() {
     </div>
   );
 }
+

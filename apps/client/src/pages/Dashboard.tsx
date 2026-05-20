@@ -1,3 +1,4 @@
+// MC Server GUI
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Play, Square, RefreshCw, Trash2 } from "lucide-react";
@@ -216,3 +217,4 @@ export default function Dashboard() {
     </div>
   );
 }
+

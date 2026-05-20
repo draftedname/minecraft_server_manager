@@ -1,3 +1,4 @@
+// MC Server GUI
 import { type HTMLAttributes, forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
@@ -18,3 +19,4 @@ const Progress = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement> & { v
 Progress.displayName = "Progress";
 
 export { Progress };
+

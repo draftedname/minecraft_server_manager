@@ -1,3 +1,4 @@
+// MC Server GUI
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -286,3 +287,4 @@ export default function ServerDashboard() {
     </div>
   );
 }
+

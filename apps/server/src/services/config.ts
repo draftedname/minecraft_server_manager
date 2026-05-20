@@ -1,3 +1,4 @@
+// MC Server GUI
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -10,3 +11,4 @@ export const DATA_DIR = path.join(ROOT_DIR, "data");
 export const SERVERS_DIR = path.join(DATA_DIR, "servers");
 export const BACKUPS_DIR = path.join(DATA_DIR, "backups");
 export const SERVERS_FILE = path.join(DATA_DIR, "servers.json");
+

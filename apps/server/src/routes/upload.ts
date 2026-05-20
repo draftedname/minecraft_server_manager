@@ -1,3 +1,4 @@
+// MC Server GUI
 import { Router, Request, Response } from "express";
 import path from "path";
 import { existsSync, mkdirSync, createWriteStream, rmSync, readFileSync, readdirSync, statSync } from "fs";
@@ -166,3 +167,4 @@ setInterval(() => {
 }, 600000); // every 10 minutes
 
 export { router as uploadRouter };
+

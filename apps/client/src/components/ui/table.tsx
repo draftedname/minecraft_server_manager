@@ -1,3 +1,4 @@
+// MC Server GUI
 import { cn } from "@/lib/utils";
 import { type HTMLAttributes, type ThHTMLAttributes, type TdHTMLAttributes, forwardRef } from "react";
 
@@ -75,3 +76,4 @@ const TableCell = forwardRef<HTMLTableCellElement, TdHTMLAttributes<HTMLTableCel
 TableCell.displayName = "TableCell";
 
 export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell };
+

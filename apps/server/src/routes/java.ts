@@ -1,3 +1,4 @@
+// MC Server GUI
 import { Router, Request, Response } from "express";
 import { checkJava, downloadJava, getJavaPath } from "../services/JavaManager.js";
 
@@ -28,3 +29,4 @@ router.post("/install", async (req: Request, res: Response) => {
 });
 
 export { router as javaRouter };
+

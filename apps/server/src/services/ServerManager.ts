@@ -1,3 +1,4 @@
+// MC Server GUI
 import { ChildProcess, spawn } from "child_process";
 import path from "path";
 import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync } from "fs";
@@ -275,3 +276,4 @@ export function forceKillAll(): void {
   }
   runningServers.clear();
 }
+

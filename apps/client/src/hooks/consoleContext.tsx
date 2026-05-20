@@ -1,3 +1,4 @@
+// MC Server GUI
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from "react";
 import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
@@ -81,3 +82,4 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
     </ConsoleContext.Provider>
   );
 }
+

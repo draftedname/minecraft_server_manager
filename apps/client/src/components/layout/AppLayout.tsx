@@ -1,3 +1,4 @@
+// MC Server GUI
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { Toaster } from "../ui/toaster";
@@ -13,3 +14,4 @@ export default function AppLayout() {
     </div>
   );
 }
+

@@ -1,3 +1,4 @@
+// MC Server GUI
 import { Server } from "socket.io";
 
 let io: Server | null = null;
@@ -28,3 +29,4 @@ export function setupWebSocket(server: Server) {
 export function getIO(): Server | null {
   return io;
 }
+

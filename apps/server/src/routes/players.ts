@@ -1,3 +1,4 @@
+// MC Server GUI
 import { Router, Request, Response } from "express";
 import path from "path";
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -128,3 +129,4 @@ router.put("/:serverId/players/ops", (req: Request, res: Response) => {
 });
 
 export { router as playersRouter };
+

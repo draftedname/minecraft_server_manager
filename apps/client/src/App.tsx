@@ -1,3 +1,4 @@
+// MC Server GUI
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import AppLayout from "./components/layout/AppLayout";
 import Dashboard from "./pages/Dashboard";
@@ -31,3 +32,4 @@ export default function App() {
     </BrowserRouter>
   );
 }
+

@@ -1,3 +1,4 @@
+// MC Server GUI
 import { Router, Request, Response } from "express";
 import {
   getVanillaVersions,
@@ -35,3 +36,4 @@ router.get("/fabric/loader", async (_req: Request, res: Response) => {
 });
 
 export { router as versionsRouter };
+

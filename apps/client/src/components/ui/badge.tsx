@@ -1,3 +1,4 @@
+// MC Server GUI
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { type HTMLAttributes } from "react";
@@ -31,3 +32,4 @@ function Badge({ className, variant, ...props }: BadgeProps) {
 }
 
 export { Badge, badgeVariants };
+

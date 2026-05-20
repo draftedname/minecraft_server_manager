@@ -1,3 +1,4 @@
+// MC Server GUI
 import { cn } from "@/lib/utils";
 import { type HTMLAttributes, forwardRef } from "react";
 
@@ -24,3 +25,4 @@ const Separator = forwardRef<HTMLDivElement, SeparatorProps>(
 Separator.displayName = "Separator";
 
 export { Separator };
+

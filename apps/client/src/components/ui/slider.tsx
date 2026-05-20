@@ -1,3 +1,4 @@
+// MC Server GUI
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import { cn } from "@/lib/utils";
 import { type ComponentPropsWithoutRef, type ElementRef, forwardRef } from "react";
@@ -23,3 +24,4 @@ const Slider = forwardRef<
 Slider.displayName = SliderPrimitive.Root.displayName;
 
 export { Slider };
+

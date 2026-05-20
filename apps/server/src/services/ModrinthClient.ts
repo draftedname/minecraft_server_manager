@@ -1,3 +1,4 @@
+// MC Server GUI
 import { createWriteStream } from "fs";
 import { writeFileSync } from "fs";
 import https from "https";
@@ -183,3 +184,4 @@ export async function downloadModFile(url: string, dest: string): Promise<void> 
   const buffer = Buffer.from(await response.arrayBuffer());
   writeFileSync(dest, buffer);
 }
+

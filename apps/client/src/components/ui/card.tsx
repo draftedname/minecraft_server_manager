@@ -1,3 +1,4 @@
+// MC Server GUI
 import { cn } from "@/lib/utils";
 import { type HTMLAttributes, forwardRef } from "react";
 
@@ -67,3 +68,4 @@ const CardFooter = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
 CardFooter.displayName = "CardFooter";
 
 export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent };
+

@@ -1,3 +1,4 @@
+// MC Server GUI
 export interface ServerConfig {
   id: string;
   name: string;
@@ -80,3 +81,4 @@ export interface PlayerEntry {
   uuid: string;
   name: string;
 }
+

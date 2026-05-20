@@ -1,3 +1,4 @@
+// MC Server GUI
 import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
 import { getSocket } from "@/lib/socket";
 import { Loader2 } from "lucide-react";
@@ -66,3 +67,4 @@ export function DownloadProgressProvider({ children }: { children: ReactNode }) 
     </ProgressContext.Provider>
   );
 }
+

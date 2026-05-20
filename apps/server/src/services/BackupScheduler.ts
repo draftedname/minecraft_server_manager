@@ -1,3 +1,4 @@
+// MC Server GUI
 import { existsSync, mkdirSync, statSync, createWriteStream, unlinkSync, rmSync } from "fs";
 import { readFileSync, writeFileSync, readdirSync } from "fs";
 import path from "path";
@@ -150,3 +151,4 @@ export async function backupWorldToDrive(
 
   return result;
 }
+

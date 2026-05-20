@@ -1,3 +1,4 @@
+// MC Server GUI
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { HardDrive, Link, Unlink, Upload, Clock, Trash2, Download, Loader2, ExternalLink } from "lucide-react";
@@ -282,3 +283,4 @@ export default function DriveSettings() {
     </div>
   );
 }
+

@@ -1,3 +1,4 @@
+// MC Server GUI
 import { NavLink, useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -127,3 +128,4 @@ export default function Sidebar() {
     </aside>
   );
 }
+

@@ -1,3 +1,4 @@
+// MC Server GUI
 import { spawn, ChildProcess, execSync } from "child_process";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import path from "path";
@@ -199,3 +200,4 @@ export async function refreshPlayitAddress(serverId: string): Promise<string | n
   if (state.mode !== "playit") return null;
   return state.address;
 }
+

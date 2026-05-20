@@ -1,3 +1,4 @@
+// MC Server GUI
 import { Router, Request, Response } from "express";
 import {
   searchMods,
@@ -74,3 +75,4 @@ router.get("/project/:id/latest", async (req: Request, res: Response) => {
 });
 
 export { router as modrinthRouter };
+

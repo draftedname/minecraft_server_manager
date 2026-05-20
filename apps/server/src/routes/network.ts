@@ -1,3 +1,4 @@
+// MC Server GUI
 import { Router, Request, Response } from "express";
 import {
   getNetworkState,
@@ -67,3 +68,4 @@ router.get("/playit/status", (_req: Request, res: Response) => {
 });
 
 export { router as networkRouter };
+

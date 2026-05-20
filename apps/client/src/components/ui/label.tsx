@@ -1,3 +1,4 @@
+// MC Server GUI
 import { cn } from "@/lib/utils";
 import { type LabelHTMLAttributes, forwardRef } from "react";
 
@@ -16,3 +17,4 @@ const Label = forwardRef<HTMLLabelElement, LabelHTMLAttributes<HTMLLabelElement>
 Label.displayName = "Label";
 
 export { Label };
+

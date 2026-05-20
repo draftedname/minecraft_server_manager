@@ -1,3 +1,4 @@
+// MC Server GUI
 import { Router, Request, Response } from "express";
 import path from "path";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
@@ -142,3 +143,4 @@ function updateServer(id: string, updates: Partial<ServerConfig>): void {
 }
 
 export { router as modpackRouter };
+

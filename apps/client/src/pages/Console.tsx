@@ -1,3 +1,4 @@
+// MC Server GUI
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -229,3 +230,4 @@ export default function Console() {
     </div>
   );
 }
+

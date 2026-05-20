@@ -1,3 +1,4 @@
+// MC Server GUI
 import * as SwitchPrimitives from "@radix-ui/react-switch";
 import { cn } from "@/lib/utils";
 import { type ComponentPropsWithoutRef, type ElementRef, forwardRef } from "react";
@@ -24,3 +25,4 @@ const Switch = forwardRef<
 Switch.displayName = SwitchPrimitives.Root.displayName;
 
 export { Switch };
+

@@ -1,3 +1,4 @@
+// MC Server GUI
 import path from "path";
 import { existsSync, rmSync } from "fs";
 import { rename, mkdir } from "fs/promises";
@@ -134,3 +135,4 @@ async function rollback(
     try { await rename(backupPath, worldPath); } catch {}
   }
 }
+

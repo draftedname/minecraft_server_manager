@@ -1,3 +1,4 @@
+// MC Server GUI
 import { writeFileSync, existsSync, mkdirSync } from "fs";
 import path from "path";
 import { getServerDir } from "./DataStore.js";
@@ -128,3 +129,4 @@ export async function getFabricLoaderVersions(): Promise<
     stable: v.stable,
   }));
 }
+
