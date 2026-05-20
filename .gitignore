@@ -1,0 +1,16 @@
+node_modules/
+.turbo/
+dist/
+data/servers/
+data/backups/
+data/java/
+data/credentials/
+data/playit/
+data/uploads/
+data/tmp/
+data/servers.json
+data/backup-schedule.json
+*.log
+.env
+.DS_Store
+Thumbs.db
