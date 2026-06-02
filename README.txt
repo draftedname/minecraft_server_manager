@@ -1,6 +1,6 @@
 ================================================================================
   MC SERVER GUI
-  A standalone desktop application for managing Minecraft servers
+  A standalone desktop application for managing Minecraft servers ( I used AI for 70% of ts pls don't judge :3 )
   License: GNU General Public License v3.0
 ================================================================================
 
