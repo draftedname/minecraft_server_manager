@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, createReadStream, unlinkSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, createReadStream, createWriteStream, unlinkSync } from "fs";
 import path from "path";
 import { google } from "googleapis";
 import { DATA_DIR } from "./config.js";
@@ -14,6 +14,11 @@ function ensureDirs() {
   if (!existsSync(CREDENTIALS_DIR)) mkdirSync(CREDENTIALS_DIR, { recursive: true });
 }
 
+function getRedirectUri(): string {
+  const port = process.env.MCSERVERGUI_PORT || "3456";
+  return `http://localhost:${port}/api/drive/oauth2callback`;
+}
+
 function getOAuth2Client() {
   ensureDirs();
 
@@ -24,9 +29,7 @@ function getOAuth2Client() {
   const credentials = JSON.parse(readFileSync(CREDENTIALS_PATH, "utf-8"));
   const { client_id, client_secret } = credentials.installed || credentials.web || credentials;
 
-  const redirectUri = credentials.installed
-    ? "http://localhost:3456/api/drive/oauth2callback"
-    : "http://localhost:3456/api/drive/oauth2callback";
+  const redirectUri = getRedirectUri();
 
   const oauth2Client = new google.auth.OAuth2(client_id, client_secret, redirectUri);
 
@@ -112,6 +115,7 @@ async function getDriveClient() {
       writeFileSync(TOKEN_PATH, JSON.stringify(credentials, null, 2), "utf-8");
       oauth.setCredentials(credentials);
     } catch {
+      try { unlinkSync(TOKEN_PATH); } catch {}
       throw new Error("Failed to refresh token. Re-authenticate.");
     }
   }
@@ -197,13 +201,23 @@ export async function listDriveBackups(): Promise<
     const drive = await getDriveClient();
     const folderId = await getOrCreateFolder(drive);
 
-    const res = await drive.files.list({
-      q: `'${folderId}' in parents and trashed=false`,
-      fields: "files(id, name, size, createdTime)",
-      orderBy: "createdTime desc",
-    });
+    let allFiles: any[] = [];
+    let pageToken: string | undefined;
 
-    return (res.data.files || []).map((f: any) => ({
+    do {
+      const res = await drive.files.list({
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: "files(id, name, size, createdTime), nextPageToken",
+        orderBy: "createdTime desc",
+        pageToken,
+        pageSize: 100,
+      });
+
+      if (res.data.files) allFiles = allFiles.concat(res.data.files);
+      pageToken = res.data.nextPageToken ?? undefined;
+    } while (pageToken);
+
+    return allFiles.map((f: any) => ({
       id: f.id || "",
       name: f.name || "",
       size: f.size || "0",
@@ -217,7 +231,7 @@ export async function listDriveBackups(): Promise<
 export async function downloadDriveBackup(fileId: string, destPath: string): Promise<boolean> {
   try {
     const drive = await getDriveClient();
-    const dest = (await import("fs")).createWriteStream(destPath);
+    const dest = createWriteStream(destPath);
 
     const res = await drive.files.get(
       { fileId, alt: "media" },

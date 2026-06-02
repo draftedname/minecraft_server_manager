@@ -5,10 +5,11 @@ import {
   getProjectVersions,
   getLatestCompatibleVersion,
 } from "../services/ModrinthClient.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
 
 const router = Router();
 
-router.get("/search", async (req: Request, res: Response) => {
+router.get("/search", asyncHandler(async (req: Request, res: Response) => {
   const { q, loader, version, serverSide, sort, categories, projectType, offset } = req.query;
 
   try {
@@ -24,24 +25,24 @@ router.get("/search", async (req: Request, res: Response) => {
       sort ? String(sort) : undefined,
       categoryList,
       projectType ? String(projectType) : undefined,
-      offset ? Number(offset) : undefined
+      !isNaN(Number(offset)) ? Number(offset) : undefined
     );
     res.json(results);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
-});
+}));
 
-router.get("/project/:id", async (req: Request, res: Response) => {
+router.get("/project/:id", asyncHandler(async (req: Request, res: Response) => {
   try {
     const project = await getProject(String(req.params.id));
     res.json(project);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
-});
+}));
 
-router.get("/project/:id/versions", async (req: Request, res: Response) => {
+router.get("/project/:id/versions", asyncHandler(async (req: Request, res: Response) => {
   const { loader, version } = req.query;
   try {
     const versions = await getProjectVersions(
@@ -53,9 +54,9 @@ router.get("/project/:id/versions", async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
-});
+}));
 
-router.get("/project/:id/latest", async (req: Request, res: Response) => {
+router.get("/project/:id/latest", asyncHandler(async (req: Request, res: Response) => {
   const { version: gameVersion, loader } = req.query;
   try {
     const latest = await getLatestCompatibleVersion(
@@ -71,6 +72,6 @@ router.get("/project/:id/latest", async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
-});
+}));
 
 export { router as modrinthRouter };

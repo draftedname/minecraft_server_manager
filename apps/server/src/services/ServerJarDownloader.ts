@@ -98,7 +98,7 @@ export async function downloadFabricJar(
   const { writeFileSync } = await import("fs");
   writeFileSync(
     path.join(serverDir, "fabric-profile.json"),
-    JSON.stringify({ classpath: cp.join("\\\\;"), mainClass, loaderVersion, gameVersion }),
+    JSON.stringify({ classpath: cp, mainClass, loaderVersion, gameVersion }),
     "utf-8"
   );
 

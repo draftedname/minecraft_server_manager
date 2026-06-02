@@ -9,6 +9,7 @@ import {
   createReadStream,
 } from "fs";
 import { loadServer, getServerDir } from "../services/DataStore.js";
+import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
 
 const router = Router();
 
@@ -24,40 +25,6 @@ interface FileEntry {
   modified: string;
 }
 
-function listFilesRecursive(dir: string, base: string): FileEntry[] {
-  if (!existsSync(dir)) return [];
-
-  const entries: FileEntry[] = [];
-  const items = readdirSync(dir, { withFileTypes: true });
-
-  for (const item of items) {
-    const fullPath = path.join(dir, item.name);
-    const relPath = path.relative(base, fullPath);
-    const stat = statSync(fullPath);
-
-    if (item.isDirectory()) {
-      entries.push({
-        name: item.name,
-        path: relPath,
-        type: "directory",
-        size: 0,
-        modified: stat.mtime.toISOString(),
-      });
-      entries.push(...listFilesRecursive(fullPath, base));
-    } else {
-      entries.push({
-        name: item.name,
-        path: relPath,
-        type: "file",
-        size: stat.size,
-        modified: stat.mtime.toISOString(),
-      });
-    }
-  }
-
-  return entries;
-}
-
 // List all files in server directory
 router.get("/:serverId/files", (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
@@ -69,7 +36,19 @@ router.get("/:serverId/files", (req: Request, res: Response) => {
 
   const serverDir = getServerDir(serverId);
   const { relpath } = req.query;
-  const targetDir = relpath ? path.join(serverDir, String(relpath)) : serverDir;
+
+  let targetDir: string;
+  try {
+    targetDir = relpath
+      ? safeJoin(serverDir, String(relpath))
+      : serverDir;
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    throw err;
+  }
 
   if (!existsSync(targetDir)) {
     res.json([]);
@@ -131,11 +110,15 @@ router.delete("/:serverId/files", (req: Request, res: Response) => {
   }
 
   const serverDir = getServerDir(serverId);
-  const fullPath = path.join(serverDir, relpath);
-
-  if (!fullPath.startsWith(serverDir)) {
-    res.status(403).json({ error: "Access denied" });
-    return;
+  let fullPath: string;
+  try {
+    fullPath = safeJoin(serverDir, relpath);
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    throw err;
   }
 
   if (!existsSync(fullPath)) {
@@ -172,11 +155,15 @@ router.get("/:serverId/files/download", (req: Request, res: Response) => {
   }
 
   const serverDir = getServerDir(serverId);
-  const fullPath = path.join(serverDir, String(relpath));
-
-  if (!fullPath.startsWith(serverDir)) {
-    res.status(403).json({ error: "Access denied" });
-    return;
+  let fullPath: string;
+  try {
+    fullPath = safeJoin(serverDir, String(relpath));
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    throw err;
   }
 
   if (!existsSync(fullPath)) {

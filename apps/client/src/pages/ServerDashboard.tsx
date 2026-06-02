@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -24,6 +24,7 @@ import { toast } from "@/components/ui/toaster";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import NetworkCard from "@/components/NetworkCard";
+import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import type { ServerConfig, ServerInfo } from "@mcservergui/shared";
 
 function statusBadge(status: string) {
@@ -59,7 +60,6 @@ function formatRAM(mb: number) {
 export default function ServerDashboard() {
   const { serverId } = useParams<{ serverId: string }>();
   const navigate = useNavigate();
-  const [info, setInfo] = useState<ServerInfo | null>(null);
 
   const { data, isLoading, refetch } = useQuery<ServerInfo>({
     queryKey: ["server", serverId],
@@ -86,9 +86,7 @@ export default function ServerDashboard() {
     },
   });
 
-  useEffect(() => {
-    if (data) setInfo(data);
-  }, [data]);
+  const debouncedRamMutate = useDebouncedCallback(ramMutation.mutate, 500);
 
   const handleAction = async (action: string) => {
     try {
@@ -107,13 +105,12 @@ export default function ServerDashboard() {
     return <div className="p-8 text-muted-foreground">Loading...</div>;
   }
 
-  if (!info) {
+  if (!data) {
     return <div className="p-8 text-muted-foreground">Server not found</div>;
   }
 
-  const { config, status, uptime } = info;
+  const { config, status, uptime } = data;
   const isRunning = status === "running";
-  const isStarting = status === "starting";
 
   return (
     <div className="p-6">
@@ -214,7 +211,7 @@ export default function ServerDashboard() {
             <Slider
               value={[config.ram]}
               onValueChange={([v]) => {
-                if (!isRunning) ramMutation.mutate(v);
+                if (!isRunning) debouncedRamMutate(v);
               }}
               min={512}
               max={32768}

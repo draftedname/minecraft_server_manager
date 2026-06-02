@@ -1,11 +1,5 @@
-import { spawn, ChildProcess, execSync } from "child_process";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import path from "path";
+import { spawnSync } from "child_process";
 import { getIO } from "../websocket/index.js";
-import { DATA_DIR } from "./config.js";
-
-const PLAYIT_DIR = path.join(DATA_DIR, "playit");
-const PLAYIT_BIN = path.join(PLAYIT_DIR, process.platform === "win32" ? "playit.exe" : "playit");
 
 interface NetworkState {
   enabled: boolean;
@@ -13,83 +7,45 @@ interface NetworkState {
   address: string | null;
   playitClaimUrl: string | null;
   playitLinked: boolean;
-  usePlayit: boolean;
   error: string | null;
 }
 
 const networkStates = new Map<string, NetworkState>();
-const playitProcesses = new Map<string, ChildProcess>();
 
-function ensurePlayitDir() {
-  if (!existsSync(PLAYIT_DIR)) mkdirSync(PLAYIT_DIR, { recursive: true });
-}
-
-function getPlayitBin(): string {
-  return PLAYIT_BIN;
-}
-
-export function isPlayitInstalled(): boolean {
-  return existsSync(getPlayitBin());
-}
-
-async function downloadPlayit(): Promise<void> {
-  ensurePlayitDir();
-  const platform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
-  const arch = process.arch === "x64" ? "x86_64" : "aarch64";
-  const downloadUrl = `https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-${platform}-${arch}.exe`;
-  const binPath = getPlayitBin();
-
+function scQuery(): { exists: boolean; running: boolean; error?: string } {
   try {
-    const response = await fetch(downloadUrl, { redirect: "follow" });
-    if (!response.ok) {
-      const apiUrl = "https://api.github.com/repos/playit-cloud/playit-agent/releases/latest";
-      const release = await fetch(apiUrl).then(r => r.json());
-      const asset = release.assets?.find((a: any) => a.name === `playit-${platform}-${arch}.exe` || a.name === `playit-${platform}-${arch}`);
-      if (asset) {
-        const retry = await fetch(asset.browser_download_url, { redirect: "follow" });
-        if (!retry.ok) throw new Error(`Retry also failed: HTTP ${retry.status}`);
-        const buffer = Buffer.from(await retry.arrayBuffer());
-        writeFileSync(binPath, buffer);
-        return;
-      }
-      throw new Error(`Download failed: HTTP ${response.status}. Please download playit manually from https://playit.gg/download`);
+    const result = spawnSync("sc", ["query", "playitd"], { encoding: "utf-8", stdio: "pipe", windowsHide: true });
+    if (result.error) {
+      return { exists: false, running: false, error: `sc command failed: ${result.error.message}` };
     }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    writeFileSync(binPath, buffer);
+    return { exists: true, running: result.stdout?.includes("RUNNING") ?? false };
   } catch (err: any) {
-    throw err;
+    return { exists: false, running: false, error: `sc command not available: ${err.message}` };
   }
 }
 
-function startPlayit(serverId: string, port: number): Promise<{ success: boolean; claimUrl?: string; error?: string }> {
-  return new Promise(async (resolve) => {
-    const bin = getPlayitBin();
-
-    if (!existsSync(bin)) {
-      try {
-        await downloadPlayit();
-      } catch (err: any) {
-        resolve({ success: false, error: `Failed to download playit: ${err.message}` });
-        return;
-      }
+function scStart(): { success: boolean; error?: string } {
+  try {
+    const result = spawnSync("sc", ["start", "playitd"], { encoding: "utf-8", stdio: "pipe", windowsHide: true });
+    if (result.status !== 0 && !(result.stderr?.includes("already been started") || result.stderr?.includes("1056"))) {
+      return { success: false, error: (result.stderr || "").trim() || "Failed to start playitd service" };
     }
-
-    // Spawn detached with shell to get a visible console window.
-    // stdio: "ignore" — output stays in playit's own window, not ours.
-    const proc = spawn(bin, [], {
-      detached: true,
-      shell: true,
-      stdio: "ignore",
-    });
-
-    proc.unref();
-    playitProcesses.set(serverId, proc);
-    resolve({ success: true });
-  });
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to start playitd service" };
+  }
 }
 
-export function getPlayitAddress(serverId: string): string | null {
-  return networkStates.get(serverId)?.address || null;
+function scStop(): { success: boolean; error?: string } {
+  try {
+    const result = spawnSync("sc", ["stop", "playitd"], { encoding: "utf-8", stdio: "pipe", windowsHide: true });
+    if (result.status !== 0 && !(result.stderr?.includes("not started") || result.stderr?.includes("1062"))) {
+      return { success: false, error: (result.stderr || "").trim() || "Failed to stop playitd service" };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to stop playitd service" };
+  }
 }
 
 export function getNetworkState(serverId: string): NetworkState {
@@ -100,7 +56,6 @@ export function getNetworkState(serverId: string): NetworkState {
       address: null,
       playitClaimUrl: null,
       playitLinked: false,
-      usePlayit: true,
       error: null,
     });
   }
@@ -111,63 +66,22 @@ function broadcastState(serverId: string, state: NetworkState): void {
   getIO()?.to(`server:${serverId}`).emit("network:state", state);
 }
 
-export function stopPlayit(serverId: string): void {
-  const proc = playitProcesses.get(serverId);
-  if (proc) {
-    if (process.platform === "win32") {
-      try { execSync(`taskkill /F /T /PID ${proc.pid} 2>nul`, { stdio: "ignore" }); } catch {}
-    } else {
-      try { proc.kill("SIGKILL"); } catch {}
-    }
-    playitProcesses.delete(serverId);
-  }
-}
-
-export function forceKillAllPlayit(): void {
-  for (const [id, proc] of playitProcesses) {
-    if (process.platform === "win32") {
-      try { execSync(`taskkill /F /T /PID ${proc.pid} 2>nul`, { stdio: "ignore" }); } catch {}
-    } else {
-      try { proc.kill("SIGKILL"); } catch {}
-    }
-  }
-  playitProcesses.clear();
-}
-
-export async function getPlayitClaimUrl(): Promise<string | null> {
-  if (!existsSync(getPlayitBin())) return null;
-  return new Promise((resolve) => {
-    const proc = spawn(getPlayitBin(), [], { stdio: "pipe" });
-    let output = "";
-    let resolved = false;
-    proc.stdout?.on("data", (data: Buffer) => {
-      output += data.toString();
-      if (!resolved) {
-        const match = output.match(/https:\/\/playit\.gg\/claim\/\S+/);
-        if (match) { resolved = true; resolve(match[0]); proc.kill(); }
-      }
-    });
-    proc.on("exit", () => { if (!resolved) { resolved = true; resolve(null); } });
-    setTimeout(() => { if (!resolved) { resolved = true; proc.kill(); resolve(null); } }, 15000);
-  });
-}
-
 export async function enablePublicMode(serverId: string, port: number = 25565): Promise<NetworkState> {
   const state = getNetworkState(serverId);
 
-  state.enabled = true;
-  state.error = null;
-
-  if (!state.usePlayit) {
-    state.mode = "none";
-    state.address = null;
+  const { exists } = scQuery();
+  if (!exists) {
+    state.enabled = false;
+    state.error = "playitd service not found. Install playit.gg first.";
     broadcastState(serverId, state);
     return state;
   }
 
-  const playitResult = await startPlayit(serverId, port);
+  state.enabled = true;
+  state.error = null;
 
-  if (playitResult.success) {
+  const result = scStart();
+  if (result.success) {
     state.mode = "playit";
     broadcastState(serverId, state);
     return state;
@@ -175,7 +89,7 @@ export async function enablePublicMode(serverId: string, port: number = 25565): 
 
   state.enabled = false;
   state.mode = "none";
-  state.error = playitResult.error || "playit.gg failed to connect";
+  state.error = result.error || "Failed to start playitd service";
   broadcastState(serverId, state);
   return state;
 }
@@ -184,9 +98,7 @@ export async function disablePublicMode(serverId: string): Promise<void> {
   const state = getNetworkState(serverId);
   state.enabled = false;
 
-  if (state.mode === "playit") {
-    stopPlayit(serverId);
-  }
+  scStop();
 
   state.mode = "none";
   state.address = null;
@@ -194,8 +106,8 @@ export async function disablePublicMode(serverId: string): Promise<void> {
   broadcastState(serverId, state);
 }
 
-export async function refreshPlayitAddress(serverId: string): Promise<string | null> {
-  const state = getNetworkState(serverId);
-  if (state.mode !== "playit") return null;
-  return state.address;
+export function forceKillAllPlayit(): void {
+  try {
+    spawnSync("sc", ["stop", "playitd"], { encoding: "utf-8", stdio: "pipe", windowsHide: true });
+  } catch {}
 }

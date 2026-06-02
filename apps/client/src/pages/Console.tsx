@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toast } from "@/components/ui/toaster";
 import { useConsoleContext } from "@/hooks/consoleContext";
 import type { ServerConfig } from "@mcservergui/shared";
 
@@ -95,9 +96,11 @@ export default function Console() {
 
     try {
       await api.post(`/servers/${serverId}/command`, { command });
-    } catch {}
+      setCommand("");
+    } catch (err: any) {
+      toast({ title: "Command failed", description: err.response?.data?.error || err.message, variant: "destructive" });
+    }
 
-    setCommand("");
     inputRef.current?.focus();
   };
 

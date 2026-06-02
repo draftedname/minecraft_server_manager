@@ -70,7 +70,8 @@ export default function Players() {
       await api.post(`/servers/${serverId}/players/${encodeURIComponent(name)}/${action}`);
     },
     onSuccess: (_, vars) => {
-      toast({ title: `${vars.name} ${vars.action}ped` });
+      const pastTense: Record<string, string> = { kick: "kicked", ban: "banned", op: "opped", deop: "deopped" };
+      toast({ title: `${vars.name} ${pastTense[vars.action] || vars.action}` });
       refetch();
     },
     onError: (err: any) => {
@@ -156,12 +157,13 @@ export default function Players() {
                             {(() => {
                               const isOp = data?.ops?.some((o) => o.name === name);
                               return (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => actionMutation.mutate({ name, action: isOp ? "deop" : "op" })}
-                                  title={isOp ? "Remove Operator" : "Make Operator"}
-                                >
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => actionMutation.mutate({ name, action: isOp ? "deop" : "op" })}
+                              title={isOp ? "Remove Operator" : "Make Operator"}
+                              disabled={actionMutation.isPending}
+                            >
                                   {isOp ? (
                                     <ShieldOff className="h-3 w-3 mr-1" />
                                   ) : (
@@ -176,6 +178,7 @@ export default function Players() {
                               variant="outline"
                               onClick={() => actionMutation.mutate({ name, action: "kick" })}
                               title="Kick"
+                              disabled={actionMutation.isPending}
                             >
                               <UserX className="h-3 w-3 mr-1" />
                               Kick
@@ -186,6 +189,7 @@ export default function Players() {
                               className="text-destructive hover:text-destructive"
                               onClick={() => actionMutation.mutate({ name, action: "ban" })}
                               title="Ban"
+                              disabled={actionMutation.isPending}
                             >
                               <Ban className="h-3 w-3 mr-1" />
                               Ban
@@ -222,7 +226,7 @@ export default function Players() {
                     <Input id="wl-uuid" placeholder="Optional" value={newWhitelist.uuid} onChange={(e) => setNewWhitelist((p) => ({ ...p, uuid: e.target.value }))} />
                   </div>
                   <div className="flex items-end">
-                    <Button onClick={addToWhitelist}><Plus className="h-4 w-4" /> Add</Button>
+                    <Button onClick={addToWhitelist} disabled={whitelistMutation.isPending}><Plus className="h-4 w-4" /> Add</Button>
                   </div>
                 </div>
                 <Table>
@@ -236,7 +240,7 @@ export default function Players() {
                           <TableCell className="font-medium">{e.name}</TableCell>
                           <TableCell className="font-mono text-xs text-muted-foreground">{e.uuid}</TableCell>
                           <TableCell>
-                            <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => removeFromList("whitelist", e)}>
+                            <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => removeFromList("whitelist", e)} disabled={whitelistMutation.isPending}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </TableCell>
@@ -263,7 +267,7 @@ export default function Players() {
                     <Input id="op-uuid" placeholder="Optional" value={newOp.uuid} onChange={(e) => setNewOp((p) => ({ ...p, uuid: e.target.value }))} />
                   </div>
                   <div className="flex items-end">
-                    <Button onClick={addToOps}><Plus className="h-4 w-4" /> Add</Button>
+                    <Button onClick={addToOps} disabled={opsMutation.isPending}><Plus className="h-4 w-4" /> Add</Button>
                   </div>
                 </div>
                 <Table>
@@ -277,7 +281,7 @@ export default function Players() {
                           <TableCell className="font-medium">{e.name}</TableCell>
                           <TableCell className="font-mono text-xs text-muted-foreground">{e.uuid}</TableCell>
                           <TableCell>
-                            <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => removeFromList("ops", e)}>
+                            <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => removeFromList("ops", e)} disabled={opsMutation.isPending}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </TableCell>

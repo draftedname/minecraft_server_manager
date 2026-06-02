@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import path from "path";
 import { readdirSync, statSync, existsSync, renameSync, unlinkSync, writeFileSync, readFileSync } from "fs";
 import { loadServer, getServerDir } from "../services/DataStore.js";
+import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
 import {
   getVersion,
   downloadModFile,
@@ -9,6 +10,7 @@ import {
   getProject,
 } from "../services/ModrinthClient.js";
 import { getIO } from "../websocket/index.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
 import type { ModInfo } from "@mcservergui/shared";
 
 const router = Router();
@@ -51,7 +53,7 @@ router.get("/:serverId/mods", (req: Request, res: Response) => {
   res.json(mods);
 });
 
-router.post("/:serverId/mods/install", async (req: Request, res: Response) => {
+router.post("/:serverId/mods/install", asyncHandler(async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const server = loadServer(serverId);
   if (!server) {
@@ -101,98 +103,9 @@ router.post("/:serverId/mods/install", async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
-});
+}));
 
-router.post("/:serverId/mods/upload", async (req: Request, res: Response) => {
-  res.status(501).json({ error: "File upload not yet implemented" });
-});
-
-router.delete("/:serverId/mods/:filename", (req: Request, res: Response) => {
-  const serverId = p(req.params, "serverId");
-  const server = loadServer(serverId);
-  if (!server) {
-    res.status(404).json({ error: "Server not found" });
-    return;
-  }
-
-  const modPath = path.join(
-    getServerDir(serverId),
-    "mods",
-    p(req.params, "filename")
-  );
-
-  if (!existsSync(modPath)) {
-    res.status(404).json({ error: "Mod not found" });
-    return;
-  }
-
-  unlinkSync(modPath);
-  res.json({ success: true });
-});
-
-router.put("/:serverId/mods/:filename/toggle", (req: Request, res: Response) => {
-  const serverId = p(req.params, "serverId");
-  const server = loadServer(serverId);
-  if (!server) {
-    res.status(404).json({ error: "Server not found" });
-    return;
-  }
-
-  const filename = p(req.params, "filename");
-  const modsDir = path.join(getServerDir(serverId), "mods");
-  const currentPath = path.join(modsDir, filename);
-
-  if (!existsSync(currentPath)) {
-    res.status(404).json({ error: "Mod not found" });
-    return;
-  }
-
-  let newFilename: string;
-  if (filename.endsWith(".jar.disabled")) {
-    newFilename = filename.replace(".disabled", "");
-  } else if (filename.endsWith(".jar")) {
-    newFilename = filename + ".disabled";
-  } else {
-    res.status(400).json({ error: "Invalid mod filename" });
-    return;
-  }
-
-  const newPath = path.join(modsDir, newFilename);
-  renameSync(currentPath, newPath);
-  res.json({ success: true, enabled: !filename.endsWith(".disabled") });
-});
-
-// Mod metadata for update checking
-interface ModMeta {
-  projectId: string;
-  versionId: string;
-  versionNumber: string;
-  installedAt: string;
-  gameVersions: string[];
-}
-
-function getMetaPath(serverId: string): string {
-  return path.join(getServerDir(serverId), "mods", "mods-metadata.json");
-}
-
-function loadModMeta(serverId: string): Record<string, ModMeta> {
-  const metaPath = getMetaPath(serverId);
-  if (!existsSync(metaPath)) return {};
-  try {
-    return JSON.parse(readFileSync(metaPath, "utf-8"));
-  } catch {
-    return {};
-  }
-}
-
-function saveModMeta(serverId: string, filename: string, meta: ModMeta): void {
-  const metaPath = getMetaPath(serverId);
-  const all = loadModMeta(serverId);
-  all[filename] = meta;
-  writeFileSync(metaPath, JSON.stringify(all, null, 2), "utf-8");
-}
-
-router.post("/:serverId/mods/check-updates", async (req: Request, res: Response) => {
+router.post("/:serverId/mods/check-updates", asyncHandler(async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const server = loadServer(serverId);
   if (!server) {
@@ -239,9 +152,9 @@ router.post("/:serverId/mods/check-updates", async (req: Request, res: Response)
   }
 
   res.json({ updates, total: entries.length, outdated: updates.length });
-});
+}));
 
-router.post("/:serverId/mods/update-all", async (req: Request, res: Response) => {
+router.post("/:serverId/mods/update-all", asyncHandler(async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const server = loadServer(serverId);
   if (!server) {
@@ -268,13 +181,24 @@ router.post("/:serverId/mods/update-all", async (req: Request, res: Response) =>
       if (!file?.url) continue;
 
       // Remove old mod file
-      const oldPath = path.join(modsDir, filename);
+      let oldPath: string;
+      try {
+        oldPath = safeJoin(modsDir, filename);
+      } catch {
+        results.push({ filename, success: false, error: "Invalid mod path" });
+        continue;
+      }
       if (existsSync(oldPath)) unlinkSync(oldPath);
 
       // Download new version
-      const dest = path.join(modsDir, file.filename);
+      let dest: string;
+      try {
+        dest = safeJoin(modsDir, file.filename);
+      } catch {
+        results.push({ filename, success: false, error: "Invalid mod filename from API" });
+        continue;
+      }
     await downloadModFile(file.url, dest);
-    io?.emit("download:progress", { message: "Complete!", current: 1, total: 1 });
 
       // Update metadata
       saveModMeta(serverId, file.filename, {
@@ -299,7 +223,124 @@ router.post("/:serverId/mods/update-all", async (req: Request, res: Response) =>
     }
   }
 
-  res.json({ results, updated: results.filter((r) => r.success).length });
+  const updatedCount = results.filter((r) => r.success).length;
+  if (updatedCount > 0) {
+    io?.emit("download:progress", { message: "Complete!", current: 1, total: 1 });
+  }
+  res.json({ results, updated: updatedCount });
+}));
+
+// Mod metadata for update checking
+interface ModMeta {
+  projectId: string;
+  versionId: string;
+  versionNumber: string;
+  installedAt: string;
+  gameVersions: string[];
+}
+
+function getMetaPath(serverId: string): string {
+  return path.join(getServerDir(serverId), "mods", "mods-metadata.json");
+}
+
+function loadModMeta(serverId: string): Record<string, ModMeta> {
+  const metaPath = getMetaPath(serverId);
+  if (!existsSync(metaPath)) return {};
+  try {
+    return JSON.parse(readFileSync(metaPath, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveModMeta(serverId: string, filename: string, meta: ModMeta): void {
+  const metaPath = getMetaPath(serverId);
+  const all = loadModMeta(serverId);
+  all[filename] = meta;
+  writeFileSync(metaPath, JSON.stringify(all, null, 2), "utf-8");
+}
+
+// Toggle mod enabled/disabled
+router.put("/:serverId/mods/:filename/toggle", (req: Request, res: Response) => {
+  const serverId = p(req.params, "serverId");
+  const rawFilename = p(req.params, "filename");
+  const server = loadServer(serverId);
+  if (!server) {
+    res.status(404).json({ error: "Server not found" });
+    return;
+  }
+
+  // Normalize: strip .disabled if frontend sent the disabled filename
+  const filename = rawFilename.endsWith(".disabled") ? rawFilename.slice(0, -9) : rawFilename;
+  const modsDir = path.join(getServerDir(serverId), "mods");
+
+  let modPath: string;
+  try {
+    modPath = safeJoin(modsDir, filename);
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    throw err;
+  }
+
+  const disabledPath = modPath + ".disabled";
+
+  if (existsSync(modPath)) {
+    renameSync(modPath, disabledPath);
+    res.json({ filename, enabled: false });
+  } else if (existsSync(disabledPath)) {
+    renameSync(disabledPath, modPath);
+    res.json({ filename, enabled: true });
+  } else {
+    res.status(404).json({ error: "Mod not found" });
+  }
+});
+
+// Delete a mod file
+router.delete("/:serverId/mods/:filename", (req: Request, res: Response) => {
+  const serverId = p(req.params, "serverId");
+  const filename = p(req.params, "filename");
+  const server = loadServer(serverId);
+  if (!server) {
+    res.status(404).json({ error: "Server not found" });
+    return;
+  }
+
+  let modPath: string;
+  try {
+    modPath = safeJoin(path.join(getServerDir(serverId), "mods"), filename);
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    throw err;
+  }
+
+  const deleted = [];
+  if (existsSync(modPath)) {
+    unlinkSync(modPath);
+    deleted.push(filename);
+  }
+  if (existsSync(modPath + ".disabled")) {
+    unlinkSync(modPath + ".disabled");
+    deleted.push(filename + ".disabled");
+  }
+
+  if (deleted.length === 0) {
+    res.status(404).json({ error: "Mod not found" });
+    return;
+  }
+
+  // Clean metadata
+  const allMeta = loadModMeta(serverId);
+  delete allMeta[filename];
+  const metaPath = getMetaPath(serverId);
+  writeFileSync(metaPath, JSON.stringify(allMeta, null, 2), "utf-8");
+
+  res.json({ success: true, deleted: deleted[0] });
 });
 
 export { router as modsRouter };

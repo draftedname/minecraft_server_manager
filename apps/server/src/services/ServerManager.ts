@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from "child_process";
+import { ChildProcess, spawn, execSync } from "child_process";
 import path from "path";
 import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync } from "fs";
 import { loadServer, loadServers, updateServer, getServerDir, ensureServerDir } from "./DataStore.js";
@@ -6,6 +6,7 @@ import type { ServerStatus, ServerInfo } from "@mcservergui/shared";
 import { v4 as uuid } from "uuid";
 import { getIO } from "../websocket/index.js";
 import { getNetworkState, enablePublicMode } from "./NetworkManager.js";
+import { findLocalJavaPath, checkJava, downloadJava } from "./JavaManager.js";
 
 interface RunningServer {
   process: ChildProcess;
@@ -18,12 +19,21 @@ interface RunningServer {
   };
   startTime: number;
   status: ServerStatus;
+  forceKillTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const runningServers = new Map<string, RunningServer>();
 
 // Track online players per server from console output
 const onlinePlayers = new Map<string, Set<string>>();
+
+function killProcess(proc: ChildProcess): void {
+  if (process.platform === "win32") {
+    try { execSync(`taskkill /F /T /PID ${proc.pid} 2>nul`, { stdio: "ignore" }); } catch {}
+  } else {
+    try { proc.kill("SIGKILL"); } catch {}
+  }
+}
 
 export function getOnlinePlayers(serverId: string): string[] {
   return [...(onlinePlayers.get(serverId) || [])];
@@ -71,6 +81,14 @@ export function getAllServerInfos(): ServerInfo[] {
   return servers.map((config) => getServerInfo(config.id)).filter((info): info is ServerInfo => info !== null);
 }
 
+function getJavaVersionForGame(gameVersion: string): string {
+  const parts = gameVersion.split(".").map(Number);
+  const minor = parts[1] || 0;
+  const patch = parts[2] || 0;
+  if (parts[0] > 1 || minor > 20 || (minor === 20 && patch >= 5)) return "21";
+  return "17";
+}
+
 export async function startServer(id: string): Promise<{ success: boolean; error?: string }> {
   const config = loadServer(id);
   if (!config) return { success: false, error: "Server not found" };
@@ -85,12 +103,34 @@ export async function startServer(id: string): Promise<{ success: boolean; error
     writeFileSync(eulaPath, "eula=true", "utf-8");
   }
 
-  const javaPath = config.javaPath || "java";
-  const ramMB = config.ram || 1024;
+  // Auto-download Java if not installed
+  const javaInfo = checkJava();
+  if (!javaInfo.installed) {
+    const version = getJavaVersionForGame(config.gameVersion);
+    const io = getIO();
+    const emit = (msg: string, current: number, total: number) => {
+      io?.emit("download:progress", { message: msg, current, total });
+    };
+    emit("Installing Java...", 0, 100);
+    const result = await downloadJava(version, emit);
+    if (!result.success || !result.path) {
+      return {
+        success: false,
+        error: `Java JDK ${version} is required. Download it from https://adoptium.net`,
+      };
+    }
+    config.javaPath = result.path;
+    await updateServer(id, { javaPath: result.path });
+  }
+
+  const javaPath = config.javaPath || findLocalJavaPath() || "java";
+  const ramMB = config.ram ?? 1024;
 
   // Auto-start network if public mode is on (fire and forget, don't emit progress)
   if (getNetworkState(id).enabled) {
-    enablePublicMode(id, 25565).catch(() => {});
+    enablePublicMode(id, 25565).catch((err: Error) => {
+      console.error(`[ServerManager] Failed to auto-start tunnel for ${id}: ${err.message}`);
+    });
   }
 
   // For Fabric, use classpath approach from fabric-profile.json
@@ -104,9 +144,12 @@ export async function startServer(id: string): Promise<{ success: boolean; error
         return { success: false, error: "server.jar not found" };
       }
 
-      const cp = process.platform === "win32"
-        ? profile.classpath.replace(/\\\\/g, "\\")
-        : profile.classpath.replace(/\\\\/g, ":");
+      const sep = process.platform === "win32" ? ";" : ":";
+      const cp = Array.isArray(profile.classpath)
+        ? profile.classpath.join(sep)
+        : (process.platform === "win32"
+            ? profile.classpath.replace(/\\\\/g, "\\")
+            : profile.classpath.replace(/\\\\/g, ":"));
 
       const args = [
         `-Xmx${ramMB}M`,
@@ -177,6 +220,7 @@ function handleProcess(id: string, config: import("@mcservergui/shared").ServerC
     },
     startTime: Date.now(),
     status: "starting",
+    forceKillTimer: null,
   };
 
   runningServers.set(id, running);
@@ -196,7 +240,7 @@ function handleProcess(id: string, config: import("@mcservergui/shared").ServerC
     if (text.includes("Done") && text.includes("For help, type \"help\"")) {
       running.status = "running";
       io?.to(`server:${id}`).emit("server:status", { status: "running" });
-      updateServer(id, { lastStartedAt: new Date().toISOString() });
+      updateServer(id, { lastStartedAt: new Date().toISOString() }).catch(() => {});
     }
   });
 
@@ -212,18 +256,28 @@ function handleProcess(id: string, config: import("@mcservergui/shared").ServerC
   });
 
   proc.on("exit", (code) => {
+    if (running.forceKillTimer) {
+      clearTimeout(running.forceKillTimer);
+      running.forceKillTimer = null;
+    }
     running.status = "stopped";
     io?.to(`server:${id}`).emit("server:status", {
       status: code === 0 ? "stopped" : "crashed",
       exitCode: code,
     });
     runningServers.delete(id);
+    onlinePlayers.delete(id);
   });
 
   proc.on("error", (err) => {
+    if (running.forceKillTimer) {
+      clearTimeout(running.forceKillTimer);
+      running.forceKillTimer = null;
+    }
     running.status = "crashed";
     io?.to(`server:${id}`).emit("server:status", { status: "crashed", error: err.message });
     runningServers.delete(id);
+    onlinePlayers.delete(id);
   });
 
   return { success: true };
@@ -233,16 +287,23 @@ export async function stopServer(id: string): Promise<{ success: boolean; error?
   const running = runningServers.get(id);
   if (!running) return { success: false, error: "Server not running" };
 
+  // Clear any stale force-kill timer from a previous stop
+  if (running.forceKillTimer) {
+    clearTimeout(running.forceKillTimer);
+    running.forceKillTimer = null;
+  }
+
   running.status = "stopping";
   getIO()?.to(`server:${id}`).emit("server:status", { status: "stopping" });
 
   running.process.stdin?.write("stop\n");
 
-  // Force kill after 30 seconds if not stopped
-  setTimeout(() => {
+  running.forceKillTimer = setTimeout(() => {
     if (runningServers.has(id)) {
-      running.process.kill("SIGKILL");
+      killProcess(running.process);
+      getIO()?.to(`server:${id}`).emit("server:status", { status: "crashed", exitCode: -1 });
       runningServers.delete(id);
+      onlinePlayers.delete(id);
     }
   }, 30000);
 
@@ -254,8 +315,12 @@ export async function restartServer(id: string): Promise<{ success: boolean; err
     const stopResult = await stopServer(id);
     if (!stopResult.success) return stopResult;
 
-    // Wait for server to fully stop
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    // Wait for server to fully stop (poll for actual process exit)
+    // Poll slightly longer than the force-kill timer (30s) to avoid race
+    for (let i = 0; i < 70; i++) {
+      if (!runningServers.has(id)) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
   }
 
   return startServer(id);
@@ -271,7 +336,11 @@ export function sendCommand(id: string, command: string): { success: boolean; er
 
 export function forceKillAll(): void {
   for (const [id, running] of runningServers) {
-    try { running.process.kill("SIGKILL"); } catch {}
+    if (running.forceKillTimer) {
+      clearTimeout(running.forceKillTimer);
+    }
+    try { killProcess(running.process); } catch {}
   }
   runningServers.clear();
+  onlinePlayers.clear();
 }

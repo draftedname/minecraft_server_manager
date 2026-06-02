@@ -4,6 +4,7 @@ import path from "path";
 import cron from "node-cron";
 import archiver from "archiver";
 import { loadServers, getServerDir } from "./DataStore.js";
+import { getRunningServer } from "./ServerManager.js";
 import { uploadBackupToDrive } from "./GoogleDriveService.js";
 import { getDriveStatus } from "./GoogleDriveService.js";
 import { BACKUPS_DIR } from "./config.js";
@@ -37,6 +38,14 @@ export function saveScheduleConfig(config: ScheduleConfig): void {
   writeFileSync(p, JSON.stringify(config, null, 2), "utf-8");
 }
 
+function minutesToCronExpr(minutes: number): string {
+  if (minutes < 60) {
+    return `*/${minutes} * * * *`;
+  }
+  const hours = Math.floor(minutes / 60);
+  return `0 */${hours} * * *`;
+}
+
 let cronJob: cron.ScheduledTask | null = null;
 
 export function startScheduler(): void {
@@ -46,16 +55,23 @@ export function startScheduler(): void {
   if (!config.enabled) return;
 
   const driveStatus = getDriveStatus();
-  if (!driveStatus.authenticated) return;
+  if (!driveStatus.authenticated) {
+    console.log("[BackupScheduler] Scheduled backups are enabled but Drive is not authenticated. Backups won't run.");
+    return;
+  }
 
   const minutes = Math.max(30, config.intervalMinutes);
-  const cronExpr = `*/${minutes} * * * *`;
+  const cronExpr = minutesToCronExpr(minutes);
 
   cronJob = cron.schedule(cronExpr, async () => {
-    await runScheduledBackup();
+    try {
+      await runScheduledBackup();
+    } catch (err) {
+      console.log(`[BackupScheduler] Cron job failed: ${(err as Error).message}`);
+    }
   });
 
-  console.log(`Backup scheduler started: every ${minutes} min`);
+  console.log(`[BackupScheduler] Started: every ${minutes} min (cron: ${cronExpr})`);
 }
 
 export function stopScheduler(): void {
@@ -67,23 +83,29 @@ export function stopScheduler(): void {
 
 async function runScheduledBackup(): Promise<void> {
   const driveStatus = getDriveStatus();
-  if (!driveStatus.authenticated) return;
+  if (!driveStatus.authenticated) {
+    console.log("[BackupScheduler] Skipping backup — Drive not authenticated");
+    return;
+  }
 
   const servers = loadServers();
 
   for (const server of servers) {
-    const serverDir = getServerDir(server.id);
-    if (!existsSync(serverDir)) continue;
+    try {
+      const serverDir = getServerDir(server.id);
+      if (!existsSync(serverDir)) continue;
 
-    // Find worlds
-    const entries = existsSync(serverDir) ? readdirSync(serverDir) : [];
-    for (const entry of entries) {
-      const fullPath = path.join(serverDir, entry);
-      if (!statSync(fullPath).isDirectory()) continue;
-      if (!existsSync(path.join(fullPath, "level.dat"))) continue;
+      const entries = existsSync(serverDir) ? readdirSync(serverDir) : [];
+      for (const entry of entries) {
+        const fullPath = path.join(serverDir, entry);
+        if (!statSync(fullPath).isDirectory()) continue;
+        if (!existsSync(path.join(fullPath, "level.dat"))) continue;
 
-      const isRunning = existsSync(path.join(fullPath, "session.lock"));
-      await backupWorldToDrive(server.id, server.name, entry, fullPath, isRunning);
+        const isRunning = !!getRunningServer(server.id);
+        await backupWorldToDrive(server.id, server.name, entry, fullPath, isRunning);
+      }
+    } catch (err) {
+      console.log(`[BackupScheduler] Failed backing up server ${server.name}: ${(err as Error).message}`);
     }
   }
 }
@@ -115,8 +137,6 @@ export async function backupWorldToDrive(
     archive.pipe(output);
 
     if (isRunning) {
-      // Live backup: first copy readable files to temp dir, then zip temp
-      // This avoids EBUSY on region files locked by the Minecraft server
       tempDir = path.join(backupsDir, `.tmp-${serverId}-${timestamp}`);
       if (existsSync(tempDir)) rmSync(tempDir, { recursive: true, force: true });
       mkdirSync(tempDir, { recursive: true });

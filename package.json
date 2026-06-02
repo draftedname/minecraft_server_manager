@@ -1,13 +1,62 @@
 {
   "name": "mcservergui",
   "private": true,
+  "version": "1.0.0",
+  "description": "Minecraft Server GUI — desktop app to manage Minecraft servers",
+  "author": "MC Server GUI",
+  "main": "apps/server/dist/electron-main.js",
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
-    "lint": "turbo lint"
+    "lint": "turbo lint",
+    "electron:dev": "turbo build && electron .",
+    "electron:build": "turbo build && electron-builder --win",
+    "electron:build:all": "turbo build && electron-builder --win --mac --linux"
+  },
+  "build": {
+    "appId": "com.mcservergui.app",
+    "productName": "MC Server GUI",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "apps/server/dist/**/*",
+      "apps/client/dist/**/*",
+      "packages/shared/dist/**/*",
+      "apps/server/node_modules/**/*",
+      "apps/client/node_modules/**/*",
+      "node_modules/.pnpm/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "apps/*/package.json",
+      "packages/*/package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false,
+      "verifyUpdateCodeSignature": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "runAfterFinish": true
+    }
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "extract-zip": "^2.0.1",
+    "googleapis": "^146.0.0",
+    "node-cron": "^3.0.3",
+    "socket.io": "^4.8.1",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
-    "turbo": "^2.4.4",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.0",
+    "turbo": "^2.9.16",
     "typescript": "^5.7.3"
   },
   "packageManager": "pnpm@11.1.2"

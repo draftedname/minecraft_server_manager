@@ -70,39 +70,67 @@ function readProperties(serverDir: string): Record<string, string> {
   const propsPath = path.join(serverDir, "server.properties");
   if (!existsSync(propsPath)) return {};
 
-  const content = readFileSync(propsPath, "utf-8");
-  const props: Record<string, string> = {};
-
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eqIdx = trimmed.indexOf("=");
-    if (eqIdx === -1) continue;
-    const key = trimmed.substring(0, eqIdx).trim();
-    const val = trimmed.substring(eqIdx + 1).trim();
-    props[key] = val;
+  try {
+    const content = readFileSync(propsPath, "utf-8");
+    const props: Record<string, string> = {};
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eqIdx = trimmed.indexOf("=");
+      if (eqIdx === -1) continue;
+      const key = trimmed.substring(0, eqIdx).trim();
+      const val = trimmed.substring(eqIdx + 1).trim();
+      props[key] = val;
+    }
+    return props;
+  } catch {
+    return {};
   }
-
-  return props;
 }
 
 function writeProperties(serverDir: string, props: Record<string, string>): void {
   const propsPath = path.join(serverDir, "server.properties");
-  const lines: string[] = [];
 
+  let existing: Record<string, string> = {};
+  const commentLines: string[] = [];
+  try {
+    if (existsSync(propsPath)) {
+      const raw = readFileSync(propsPath, "utf-8");
+      for (const line of raw.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("#") || trimmed === "") {
+          commentLines.push(line);
+          continue;
+        }
+        const eq = line.indexOf("=");
+        if (eq > 0) existing[line.substring(0, eq)] = line.substring(eq + 1);
+      }
+    }
+  } catch {
+    existing = {};
+  }
+  const merged = { ...existing, ...props };
+
+  const lines: string[] = [...commentLines];
+  if (lines.length > 0 && lines[lines.length - 1] !== "") {
+    lines.push("");
+  }
   for (const key of Object.keys(PROPERTY_DEFINITIONS)) {
-    if (key in props) {
-      lines.push(`${key}=${props[key]}`);
+    if (key in merged) {
+      lines.push(`${key}=${merged[key]}`);
     }
   }
-
-  for (const [key, value] of Object.entries(props)) {
+  for (const [key, value] of Object.entries(merged)) {
     if (!(key in PROPERTY_DEFINITIONS)) {
       lines.push(`${key}=${value}`);
     }
   }
 
-  writeFileSync(propsPath, lines.join("\n") + "\n", "utf-8");
+  try {
+    writeFileSync(propsPath, lines.join("\n") + "\n", "utf-8");
+  } catch {
+    throw new Error("Failed to write server.properties");
+  }
 }
 
 router.get("/:serverId/properties", (req: Request, res: Response) => {
@@ -117,13 +145,44 @@ router.get("/:serverId/properties", (req: Request, res: Response) => {
   const props = readProperties(serverDir);
 
   if (Object.keys(props).length === 0) {
-    const defaults: Record<string, string> = {};
-    for (const [key, def] of Object.entries(PROPERTY_DEFINITIONS)) {
-      if (def.type === "boolean") defaults[key] = "true";
-      else if (def.type === "number") defaults[key] = "0";
-      else if (def.type === "select" && def.options) defaults[key] = def.options[0];
-      else defaults[key] = "";
-    }
+    const defaults: Record<string, string> = {
+      "server-port": "25565",
+      "max-players": "20",
+      "view-distance": "10",
+      "simulation-distance": "10",
+      "gamemode": "survival",
+      "difficulty": "easy",
+      "online-mode": "true",
+      "allow-flight": "false",
+      "pvp": "true",
+      "spawn-animals": "true",
+      "spawn-monsters": "true",
+      "generate-structures": "true",
+      "enable-command-block": "false",
+      "level-name": "world",
+      "level-type": "minecraft\\:normal",
+      "motd": "A Minecraft Server",
+      "white-list": "false",
+      "enforce-whitelist": "false",
+      "broadcast-console-to-ops": "true",
+      "max-build-height": "256",
+      "network-compression-threshold": "256",
+      "player-idle-timeout": "0",
+      "spawn-protection": "16",
+      "op-permission-level": "4",
+      "use-native-transport": "true",
+      "sync-chunk-writes": "true",
+      "enable-query": "false",
+      "enable-rcon": "false",
+      "allow-nether": "true",
+      "spawn-npcs": "true",
+      "prevent-proxy-connections": "false",
+      "hardcore": "false",
+      "force-gamemode": "false",
+      "hide-online-players": "false",
+      "enable-status": "true",
+      "enforce-secure-profile": "true",
+    };
     res.json({ properties: defaults, definitions: PROPERTY_DEFINITIONS, categories: PROPERTY_CATEGORIES });
     return;
   }
@@ -158,9 +217,13 @@ router.get("/:serverId/eula", (req: Request, res: Response) => {
     return;
   }
 
-  const eulaPath = path.join(getServerDir(serverId), "eula.txt");
-  const accepted = existsSync(eulaPath) && readFileSync(eulaPath, "utf-8").includes("eula=true");
-  res.json({ accepted });
+  try {
+    const eulaPath = path.join(getServerDir(serverId), "eula.txt");
+    const accepted = existsSync(eulaPath) && readFileSync(eulaPath, "utf-8").includes("eula=true");
+    res.json({ accepted });
+  } catch {
+    res.status(500).json({ error: "Failed to read eula.txt" });
+  }
 });
 
 router.put("/:serverId/eula", (req: Request, res: Response) => {
@@ -171,9 +234,13 @@ router.put("/:serverId/eula", (req: Request, res: Response) => {
     return;
   }
 
-  const eulaPath = path.join(getServerDir(serverId), "eula.txt");
-  writeFileSync(eulaPath, "eula=true", "utf-8");
-  res.json({ accepted: true });
+  try {
+    const eulaPath = path.join(getServerDir(serverId), "eula.txt");
+    writeFileSync(eulaPath, "eula=true", "utf-8");
+    res.json({ accepted: true });
+  } catch {
+    res.status(500).json({ error: "Failed to write eula.txt" });
+  }
 });
 
 export { router as settingsRouter };

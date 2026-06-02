@@ -42,6 +42,10 @@ export function DownloadProgressProvider({ children }: { children: ReactNode }) 
 
     return () => {
       socket.off("download:progress");
+      if (hideTimer.current) {
+        clearTimeout(hideTimer.current);
+        hideTimer.current = null;
+      }
     };
   }, []);
 

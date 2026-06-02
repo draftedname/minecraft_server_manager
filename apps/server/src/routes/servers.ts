@@ -9,6 +9,9 @@ import { checkJava } from "../services/JavaManager.js";
 import { SERVERS_DIR } from "../services/config.js";
 import { getIO } from "../websocket/index.js";
 import { copyDirAsync } from "../services/FileUtils.js";
+import { readLastLines } from "../services/readLastLines.js";
+import { installModpack } from "../services/ModpackInstaller.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
 import type { ServerConfig, CreateServerRequest } from "@mcservergui/shared";
 
 const router = Router();
@@ -19,27 +22,12 @@ function p(params: any, key: string): string {
 
 // List all servers
 router.get("/", (_req: Request, res: Response) => {
-  let servers = loadServers();
-  const valid: ServerConfig[] = [];
-  let cleaned = false;
-
-  for (const s of servers) {
-    if (existsSync(path.join(SERVERS_DIR, s.id))) {
-      valid.push(s);
-    } else {
-      cleaned = true;
-    }
-  }
-
-  if (cleaned) {
-    saveServers(valid);
-  }
-
+  const valid = loadServers();
   res.json(valid);
 });
 
 // Create server
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", asyncHandler(async (req: Request, res: Response) => {
   const body = req.body as CreateServerRequest;
 
   if (!body.name || !body.type) {
@@ -111,83 +99,18 @@ router.post("/", async (req: Request, res: Response) => {
 
       emit("Fetching modpack info...", 0, 1);
 
-      const version = await getVersion(String(body.modpackVersionId));
-      const mrpackFile = version?.files?.find((f: any) => f.filename?.endsWith(".mrpack"));
-      if (!mrpackFile) throw new Error("No .mrpack file found for this modpack version");
-
-      const mrpackPath = path.join(dir, "pack.mrpack");
-      emit("Downloading modpack file...", 0, 1);
-      await downloadModFile(mrpackFile.url, mrpackPath);
-
-      const extractDir = path.join(dir, ".pack-extract");
-      if (existsSync(extractDir)) rmSync(extractDir, { recursive: true, force: true });
-      mkdirSync(extractDir, { recursive: true });
-
-      emit("Extracting modpack...", 1, 1);
-      const { default: extract } = await import("extract-zip");
-      await extract(mrpackPath, { dir: extractDir });
-
-      const manifestPath = path.join(extractDir, "modrinth.index.json");
-      if (!existsSync(manifestPath)) throw new Error("modrinth.index.json not found");
-
-      const { readFileSync } = await import("fs");
-      const manifestData = JSON.parse(readFileSync(manifestPath, "utf-8"));
-
-      const gameVer = (manifestData.dependencies?.minecraft || manifestData.versionId).replace(/^v/, "");
-      const loaderType = manifestData.dependencies?.["fabric-loader"] ? "fabric" : "vanilla";
-      const loaderVer = manifestData.dependencies?.["fabric-loader"];
-
-      console.log(`Modpack: ${manifestData.name}, MC ${gameVer}, loader: ${loaderType} ${loaderVer || ""}`);
-
-      emit("Downloading server jar...", 1, 3);
-      if (loaderType === "fabric" && loaderVer) {
-        await downloadFabricJar(id, gameVer, loaderVer);
-      } else {
-        await downloadVanillaJar(id, gameVer);
-      }
-
-      const modsDir = path.join(dir, "mods");
-      if (!existsSync(modsDir)) mkdirSync(modsDir, { recursive: true });
-
-      const files = manifestData.files || [];
-      console.log(`Downloading ${files.length} mods...`);
-      let done = 0;
-      for (const file of files) {
-        done++;
-        emit(`Downloading mods (${done}/${files.length})...`, done, files.length + 2);
-        if (!file.downloads?.[0]) continue;
-        const filePath = path.join(dir, file.path);
-        const fileDir = path.dirname(filePath);
-        if (!existsSync(fileDir)) mkdirSync(fileDir, { recursive: true });
-        try {
-          await downloadModFile(file.downloads[0], filePath);
-        } catch (e: any) {
-          console.log(`  Failed: ${file.path} - ${e.message}`);
-        }
-      }
-
-      const overridesDir = path.join(extractDir, "overrides");
-      if (existsSync(overridesDir)) {
-        await copyDirAsync(overridesDir, dir);
-      }
-
-      rmSync(extractDir, { recursive: true, force: true });
-      try { (await import("fs")).unlinkSync(mrpackPath); } catch {}
-
-      config.gameVersion = gameVer;
-      config.loaderVersion = loaderVer;
-
-      emit("Complete!", 1, 1);
+      const result = await installModpack(dir, String(body.modpackVersionId), emit);
+      config.gameVersion = result.gameVersion;
+      config.loaderVersion = result.loaderVersion;
     }
+
+    await addServer(config);
+    res.status(201).json(config);
   } catch (err: any) {
     console.error("Server creation failed:", err.message);
     res.status(500).json({ error: err.message });
-    return;
   }
-
-  addServer(config);
-  res.status(201).json(config);
-});
+}));
 
 // Get server details
 router.get("/:id", (req: Request, res: Response) => {
@@ -201,9 +124,15 @@ router.get("/:id", (req: Request, res: Response) => {
 });
 
 // Delete server
-router.delete("/:id", (req: Request, res: Response) => {
+router.delete("/:id", asyncHandler(async (req: Request, res: Response) => {
   const id = p(req.params, "id");
-  const removed = removeServer(id);
+
+  if (getRunningServer(id)) {
+    res.status(400).json({ error: "Server is running. Stop it before deleting." });
+    return;
+  }
+
+  const removed = await removeServer(id);
   if (!removed) {
     res.status(404).json({ error: "Server not found" });
     return;
@@ -213,10 +142,10 @@ router.delete("/:id", (req: Request, res: Response) => {
     rmSync(serverDir, { recursive: true, force: true });
   }
   res.json({ success: true });
-});
+}));
 
 // Start server
-router.post("/:id/start", async (req: Request, res: Response) => {
+router.post("/:id/start", asyncHandler(async (req: Request, res: Response) => {
   const id = p(req.params, "id");
   const result = await startServer(id);
   if (!result.success) {
@@ -224,10 +153,10 @@ router.post("/:id/start", async (req: Request, res: Response) => {
     return;
   }
   res.json({ success: true });
-});
+}));
 
 // Stop server
-router.post("/:id/stop", async (req: Request, res: Response) => {
+router.post("/:id/stop", asyncHandler(async (req: Request, res: Response) => {
   const id = p(req.params, "id");
   const result = await stopServer(id);
   if (!result.success) {
@@ -235,10 +164,10 @@ router.post("/:id/stop", async (req: Request, res: Response) => {
     return;
   }
   res.json({ success: true });
-});
+}));
 
 // Restart server
-router.post("/:id/restart", async (req: Request, res: Response) => {
+router.post("/:id/restart", asyncHandler(async (req: Request, res: Response) => {
   const id = p(req.params, "id");
   const result = await restartServer(id);
   if (!result.success) {
@@ -246,7 +175,7 @@ router.post("/:id/restart", async (req: Request, res: Response) => {
     return;
   }
   res.json({ success: true });
-});
+}));
 
 // Send command
 router.post("/:id/command", (req: Request, res: Response) => {
@@ -275,17 +204,12 @@ router.get("/:id/console-history", (req: Request, res: Response) => {
     return;
   }
 
-  try {
-    const content = readFileSync(logPath, "utf-8");
-    const lines = content.split("\n").filter(Boolean).slice(-1000);
-    res.json({ lines });
-  } catch {
-    res.json({ lines: [] });
-  }
+  const lines = readLastLines(logPath, 1000);
+  res.json({ lines });
 });
 
 // Update server RAM allocation
-router.put("/:id/ram", (req: Request, res: Response) => {
+router.put("/:id/ram", asyncHandler(async (req: Request, res: Response) => {
   const id = p(req.params, "id");
   const config = loadServer(id);
   if (!config) {
@@ -301,8 +225,8 @@ router.put("/:id/ram", (req: Request, res: Response) => {
     res.status(400).json({ error: "RAM must be between 512 and 32768 MB" });
     return;
   }
-  updateServer(id, { ram });
+  await updateServer(id, { ram });
   res.json({ success: true, ram });
-});
+}));
 
 export { router as serversRouter };

@@ -1,23 +1,25 @@
 import { Router, Request, Response } from "express";
 import path from "path";
 import archiver from "archiver";
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, rmSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, rmSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { createWriteStream } from "fs";
+import { readdir, stat } from "fs/promises";
 import { v4 as uuid } from "uuid";
 import { loadServer, getServerDir } from "../services/DataStore.js";
-import { BACKUPS_DIR } from "../services/config.js";
+import { BACKUPS_DIR, DATA_DIR } from "../services/config.js";
 import { restoreWorld, restoreWorldFromDrive } from "../services/WorldRestoreService.js";
 import { getRunningServer } from "../services/ServerManager.js";
 import { copyReadable } from "../services/FileUtils.js";
 import type { WorldInfo, BackupMeta } from "@mcservergui/shared";
-
+import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
 const router = Router();
 
 function p(params: any, key: string): string {
   return String(params[key]);
 }
 
-router.get("/:serverId/worlds", (req: Request, res: Response) => {
+router.get("/:serverId/worlds", asyncHandler(async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const server = loadServer(serverId);
   if (!server) {
@@ -27,109 +29,113 @@ router.get("/:serverId/worlds", (req: Request, res: Response) => {
 
   const serverDir = getServerDir(serverId);
 
-  const worlds: WorldInfo[] = [];
+  // Read the active world name from server.properties
+  let currentLevelName = "world";
+  const propsPath = path.join(serverDir, "server.properties");
+  if (existsSync(propsPath)) {
+    try {
+      const content = readFileSync(propsPath, "utf-8");
+      const match = content.match(/^level-name=(.+)$/m);
+      if (match) currentLevelName = match[1].trim();
+    } catch {}
+  }
+
   const entries = existsSync(serverDir) ? readdirSync(serverDir) : [];
 
-  for (const entry of entries) {
-    const fullPath = path.join(serverDir, entry);
-    const stat = statSync(fullPath);
+  const results = await Promise.all(
+    entries
+      .filter((entry) => {
+        const fullPath = path.join(serverDir, entry);
+        const stat = statSync(fullPath);
+        return stat.isDirectory() && existsSync(path.join(fullPath, "level.dat"));
+      })
+      .map(async (entry) => ({
+        name: entry,
+        size: await getDirSizeAsync(path.join(serverDir, entry)),
+        lastModified: statSync(path.join(serverDir, entry)).mtime.toISOString(),
+        isActive: entry === currentLevelName,
+      }))
+  );
 
-    if (stat.isDirectory()) {
-      if (existsSync(path.join(fullPath, "level.dat"))) {
-        worlds.push({
-          name: entry,
-          size: getDirSize(fullPath),
-          lastModified: stat.mtime.toISOString(),
-        });
-      }
-    }
-  }
+  res.json(results);
+}));
 
-  res.json(worlds);
-});
-
-router.get("/:serverId/backups", (req: Request, res: Response) => {
+// Create local backup of a world
+router.post("/:serverId/worlds/backup", asyncHandler(async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
-  const backupsDir = path.join(BACKUPS_DIR, serverId);
-
-  if (!existsSync(backupsDir)) {
-    res.json([]);
-    return;
-  }
-
-  const files = readdirSync(backupsDir).filter((f) => f.endsWith(".zip"));
-  const backups: BackupMeta[] = files.map((f) => {
-    const filePath = path.join(backupsDir, f);
-    const stat = statSync(filePath);
-    return {
-      id: f.replace(".zip", ""),
-      worldName: "world",
-      serverId,
-      size: stat.size,
-      createdAt: stat.mtime.toISOString(),
-      drive: false,
-    };
-  });
-
-  res.json(backups);
-});
-
-router.post("/:serverId/worlds/backup", async (req: Request, res: Response) => {
-  const serverId = p(req.params, "serverId");
+  const { worldName } = req.body;
   const server = loadServer(serverId);
   if (!server) {
     res.status(404).json({ error: "Server not found" });
     return;
   }
 
-  const { worldName } = req.body;
-  const worldToBackup = worldName || "world";
-  const worldPath = path.join(getServerDir(serverId), worldToBackup);
+  const world = worldName || "world";
+  const serverDir = getServerDir(serverId);
+  let worldPath: string;
+  try {
+    worldPath = safeJoin(serverDir, world);
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    throw err;
+  }
 
   if (!existsSync(worldPath)) {
-    res.status(404).json({ error: `World '${worldToBackup}' not found` });
+    res.status(404).json({ error: `World '${world}' not found` });
     return;
   }
 
   const backupId = uuid();
+  const safeWorld = world.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const zipFilename = `${safeWorld}--${backupId}.zip`;
   const backupsDir = path.join(BACKUPS_DIR, serverId);
   if (!existsSync(backupsDir)) mkdirSync(backupsDir, { recursive: true });
+  const zipPath = path.join(backupsDir, zipFilename);
 
-  const zipPath = path.join(backupsDir, `${backupId}.zip`);
-
-  // If server is running, copy readable files to temp first to avoid EBUSY crashes
   const isRunning = !!getRunningServer(serverId);
-  const output = createWriteStream(zipPath);
-  const archive = archiver("zip", { zlib: { level: 9 } });
-  archive.pipe(output);
+  let tempDir: string | null = null;
 
-  if (isRunning) {
-    const tempDir = path.join(backupsDir, `.tmp-local-${serverId}-${backupId}`);
-    try {
+  try {
+    const output = createWriteStream(zipPath);
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    archive.pipe(output);
+
+    if (isRunning) {
+      const timestamp = Date.now();
+      tempDir = path.join(BACKUPS_DIR, `.tmp-${serverId}-${timestamp}`);
       if (existsSync(tempDir)) rmSync(tempDir, { recursive: true, force: true });
       mkdirSync(tempDir, { recursive: true });
       await copyReadable(worldPath, tempDir);
-      archive.directory(tempDir, worldToBackup);
-    } finally {
-      if (existsSync(tempDir)) {
-        try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
-      }
+      archive.directory(tempDir, world);
+    } else {
+      archive.directory(worldPath, world);
     }
-  } else {
-    archive.directory(worldPath, worldToBackup);
+
+    const streamDone = new Promise<void>((resolve, reject) => {
+      output.on("close", resolve);
+      archive.on("error", reject);
+      archive.finalize();
+    });
+    await streamDone;
+  } catch (err: any) {
+    try { unlinkSync(zipPath); } catch {}
+    res.status(500).json({ error: err.message });
+    return;
+  } finally {
+    if (tempDir && existsSync(tempDir)) {
+      try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
+    }
   }
 
-  await new Promise<void>((resolve, reject) => {
-    output.on("close", resolve);
-    archive.on("error", reject);
-    archive.finalize();
-  });
-
-  res.json({ id: backupId, path: zipPath });
-});
+  const size = existsSync(zipPath) ? statSync(zipPath).size : 0;
+  res.json({ backupId, size, worldName: world, createdAt: new Date().toISOString() });
+}));
 
 // Restore world from a local backup
-router.post("/:serverId/worlds/restore", async (req: Request, res: Response) => {
+router.post("/:serverId/worlds/restore", asyncHandler(async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const { worldName, backupId } = req.body;
 
@@ -138,8 +144,8 @@ router.post("/:serverId/worlds/restore", async (req: Request, res: Response) => 
     return;
   }
 
-  const zipPath = path.join(BACKUPS_DIR, serverId, `${backupId}.zip`);
-  if (!existsSync(zipPath)) {
+  const zipPath = findBackupZip(serverId, backupId);
+  if (!zipPath || !existsSync(zipPath)) {
     res.status(404).json({ error: "Backup file not found" });
     return;
   }
@@ -151,12 +157,12 @@ router.post("/:serverId/worlds/restore", async (req: Request, res: Response) => 
   }
 
   res.json({ success: true, rollbackPerformed: result.rollbackPerformed });
-});
+}));
 
-// Restore world from a Google Drive backup
-router.post("/:serverId/worlds/restore-drive", async (req: Request, res: Response) => {
+// Restore world from Google Drive backup
+router.post("/:serverId/worlds/restore-drive", asyncHandler(async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
-  const { worldName, driveFileId } = req.body;
+  const { driveFileId, worldName } = req.body;
 
   if (!driveFileId) {
     res.status(400).json({ error: "driveFileId is required" });
@@ -170,56 +176,17 @@ router.post("/:serverId/worlds/restore-drive", async (req: Request, res: Respons
   }
 
   res.json({ success: true, rollbackPerformed: result.rollbackPerformed });
-});
-
-router.delete("/:serverId/backups/:backupId", (req: Request, res: Response) => {
-  const serverId = p(req.params, "serverId");
-  const backupId = p(req.params, "backupId");
-  const zipPath = path.join(BACKUPS_DIR, serverId, `${backupId}.zip`);
-
-  if (!existsSync(zipPath)) {
-    res.status(404).json({ error: "Backup not found" });
-    return;
-  }
-
-  unlinkSync(zipPath);
-  res.json({ success: true });
-});
-
-router.get("/:serverId/backups/:backupId/download", (req: Request, res: Response) => {
-  const serverId = p(req.params, "serverId");
-  const backupId = p(req.params, "backupId");
-  const zipPath = path.join(BACKUPS_DIR, serverId, `${backupId}.zip`);
-
-  if (!existsSync(zipPath)) {
-    res.status(404).json({ error: "Backup not found" });
-    return;
-  }
-
-  res.download(zipPath);
-});
-
-function getDirSize(dir: string): number {
-  let size = 0;
-  const entries = readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      size += getDirSize(fullPath);
-    } else {
-      try {
-        size += statSync(fullPath).size;
-      } catch {
-        // Skip
-      }
-    }
-  }
-  return size;
-}
+}));
 
 // Import a zip file as a world
-router.post("/:serverId/worlds/import", async (req: Request, res: Response) => {
+router.post("/:serverId/worlds/import", asyncHandler(async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
+  const server = loadServer(serverId);
+  if (!server) {
+    res.status(404).json({ error: "Server not found" });
+    return;
+  }
+
   const { zipPath } = req.body;
 
   if (!zipPath) {
@@ -231,6 +198,14 @@ router.post("/:serverId/worlds/import", async (req: Request, res: Response) => {
   const isRunning = !!getRunningServer(serverId);
   if (isRunning) {
     res.status(400).json({ error: "Server is running. Stop it before importing a world." });
+    return;
+  }
+
+  // Validate zipPath is within a trusted directory
+  const uploadsDir = path.resolve(path.join(DATA_DIR, "uploads"));
+  const resolvedZip = path.resolve(zipPath);
+  if (!resolvedZip.startsWith(path.resolve(BACKUPS_DIR)) && !resolvedZip.startsWith(uploadsDir)) {
+    res.status(403).json({ error: "Access denied" });
     return;
   }
 
@@ -262,18 +237,26 @@ router.post("/:serverId/worlds/import", async (req: Request, res: Response) => {
       return;
     }
 
+    // Guardrail: verify recognizable Minecraft world structure
+    const hasRegion = existsSync(path.join(worldRoot, "region"));
+    const hasDims = existsSync(path.join(worldRoot, "DIM-1")) || existsSync(path.join(worldRoot, "DIM1"));
+    const warnings: string[] = [];
+    if (!hasRegion && !hasDims) {
+      warnings.push("This world appears incomplete — no region or dimension folders found. It may not load correctly.");
+    }
+    warnings.push("Imported worlds may not be compatible if they were created with a different Minecraft version or mod set.");
+
     // Remove existing world dir if it exists
     if (existsSync(worldDir)) rmSync(worldDir, { recursive: true, force: true });
 
     // Move world to final location
-    const { renameSync } = await import("fs");
     renameSync(worldRoot, worldDir);
     rmSync(tempDir, { recursive: true, force: true });
 
     // Update server.properties level-name
     const propsPath = path.join(serverDir, "server.properties");
     if (existsSync(propsPath)) {
-      const propsContent = (await import("fs")).readFileSync(propsPath, "utf-8");
+      const propsContent = readFileSync(propsPath, "utf-8");
       const lines = propsContent.split("\n");
       const newLines: string[] = [];
       let found = false;
@@ -286,13 +269,167 @@ router.post("/:serverId/worlds/import", async (req: Request, res: Response) => {
         }
       }
       if (!found) newLines.push(`level-name=${zipName}`);
-      (await import("fs")).writeFileSync(propsPath, newLines.join("\n"), "utf-8");
+      writeFileSync(propsPath, newLines.join("\n"), "utf-8");
     }
 
-    res.json({ success: true, worldName: zipName, path: worldDir });
+    res.json({ success: true, worldName: zipName, path: worldDir, warnings: warnings.length > 0 ? warnings : undefined });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+}));
+
+async function getDirSizeAsync(dir: string): Promise<number> {
+  let size = 0;
+  const names = await readdir(dir, { withFileTypes: true });
+  for (const entry of names) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      size += await getDirSizeAsync(fullPath);
+    } else {
+      try {
+        const st = await stat(fullPath);
+        size += st.size;
+      } catch {}
+    }
+  }
+  return size;
+}
+
+function findBackupZip(serverId: string, backupId: string): string | null {
+  const backupsDir = path.join(BACKUPS_DIR, serverId);
+  if (!existsSync(backupsDir)) return null;
+  const files = readdirSync(backupsDir);
+  // New format: worldName--uuid.zip
+  const match = files.find((f) => f.endsWith(`--${backupId}.zip`) || f === `${backupId}.zip`);
+  return match ? path.join(backupsDir, match) : null;
+}
+
+function parseBackupFilename(filename: string): { worldName: string; backupId: string } {
+  const name = filename.replace(/\.zip$/, "");
+  const sepIdx = name.indexOf("--");
+  if (sepIdx > 0) {
+    return { worldName: name.substring(0, sepIdx), backupId: name.substring(sepIdx + 2) };
+  }
+  // Legacy: bare UUID filename (no world name encoded)
+  return { worldName: "world", backupId: name };
+}
+
+// List backups for a server
+router.get("/:serverId/backups", (req: Request, res: Response) => {
+  const serverId = p(req.params, "serverId");
+  const server = loadServer(serverId);
+  if (!server) {
+    res.status(404).json({ error: "Server not found" });
+    return;
+  }
+
+  const backupsDir = path.join(BACKUPS_DIR, serverId);
+  if (!existsSync(backupsDir)) {
+    res.json([]);
+    return;
+  }
+
+  const files = readdirSync(backupsDir).filter((f) => f.endsWith(".zip"));
+  const backups: BackupMeta[] = files.map((f) => {
+    const p = path.join(backupsDir, f);
+    const st = statSync(p);
+    const { worldName, backupId } = parseBackupFilename(f);
+    return {
+      id: backupId,
+      worldName,
+      serverId,
+      size: st.size,
+      createdAt: st.mtime.toISOString(),
+      drive: false,
+    };
+  });
+
+  res.json(backups);
+});
+
+// Download a local backup
+router.get("/:serverId/backups/:backupId/download", (req: Request, res: Response) => {
+  const serverId = p(req.params, "serverId");
+  const backupId = p(req.params, "backupId");
+
+  const zipPath = findBackupZip(serverId, backupId);
+  if (!zipPath || !existsSync(zipPath)) {
+    res.status(404).json({ error: "Backup not found" });
+    return;
+  }
+
+  res.download(zipPath, `backup-${backupId}.zip`);
+});
+
+// Delete a backup
+router.delete("/:serverId/backups/:backupId", (req: Request, res: Response) => {
+  const serverId = p(req.params, "serverId");
+  const backupId = p(req.params, "backupId");
+
+  const zipPath = findBackupZip(serverId, backupId);
+  if (!zipPath || !existsSync(zipPath)) {
+    res.status(404).json({ error: "Backup not found" });
+    return;
+  }
+
+  unlinkSync(zipPath);
+  res.json({ success: true });
+});
+
+// Activate a dormant world
+router.put("/:serverId/worlds/:worldName/activate", (req: Request, res: Response) => {
+  const serverId = p(req.params, "serverId");
+  const worldName = p(req.params, "worldName");
+  const server = loadServer(serverId);
+  if (!server) {
+    res.status(404).json({ error: "Server not found" });
+    return;
+  }
+
+  if (getRunningServer(serverId)) {
+    res.status(400).json({ error: "Server is running. Stop it before changing worlds." });
+    return;
+  }
+
+  const serverDir = getServerDir(serverId);
+  let targetPath: string;
+  try {
+    targetPath = safeJoin(serverDir, worldName);
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    throw err;
+  }
+
+  if (!existsSync(targetPath) || !existsSync(path.join(targetPath, "level.dat"))) {
+    res.status(404).json({ error: `World '${worldName}' not found or has no level.dat` });
+    return;
+  }
+
+  const propsPath = path.join(serverDir, "server.properties");
+  if (!existsSync(propsPath)) {
+    res.status(500).json({ error: "server.properties not found" });
+    return;
+  }
+
+  const content = readFileSync(propsPath, "utf-8");
+  const lines = content.split("\n");
+  const newLines: string[] = [];
+  let found = false;
+  for (const line of lines) {
+    if (line.startsWith("level-name=")) {
+      newLines.push(`level-name=${worldName}`);
+      found = true;
+    } else {
+      newLines.push(line);
+    }
+  }
+  if (!found) newLines.push(`level-name=${worldName}`);
+  writeFileSync(propsPath, newLines.join("\n"), "utf-8");
+
+  res.json({ success: true, worldName, active: true });
 });
 
 export { router as worldsRouter };

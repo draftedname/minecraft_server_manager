@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { HardDrive, Link, Unlink, Upload, Clock, Trash2, Download, Loader2, ExternalLink } from "lucide-react";
 import api from "@/lib/api";
@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "@/components/ui/toaster";
+import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 
 interface DriveStatus {
   hasCredentials: boolean;
@@ -42,6 +43,7 @@ function formatSize(bytes: string) {
 export default function DriveSettings() {
   const queryClient = useQueryClient();
   const [credentialsJson, setCredentialsJson] = useState("");
+  const authTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: status } = useQuery<DriveStatus>({
     queryKey: ["drive", "status"],
@@ -75,8 +77,10 @@ export default function DriveSettings() {
       window.open(data.url, "_blank");
     },
     onSuccess: () => {
-      setTimeout(() => {
+      if (authTimerRef.current) clearTimeout(authTimerRef.current);
+      authTimerRef.current = setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["drive"] });
+        authTimerRef.current = null;
       }, 5000);
     },
   });
@@ -86,6 +90,9 @@ export default function DriveSettings() {
     onSuccess: () => {
       toast({ title: "Drive disconnected" });
       queryClient.invalidateQueries({ queryKey: ["drive"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Disconnect failed", description: err.response?.data?.error || err.message, variant: "destructive" });
     },
   });
 
@@ -111,6 +118,11 @@ export default function DriveSettings() {
       queryClient.invalidateQueries({ queryKey: ["drive", "schedule"] });
     },
   });
+
+  const debouncedScheduleMutate = useDebouncedCallback(
+    (config: { enabled: boolean; intervalMinutes: number }) => scheduleMutation.mutate(config),
+    500
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -206,7 +218,7 @@ export default function DriveSettings() {
                   </div>
                   <Slider
                     value={[schedule.intervalMinutes]}
-                    onValueChange={([v]) => scheduleMutation.mutate({ enabled: true, intervalMinutes: v })}
+                    onValueChange={([v]) => debouncedScheduleMutate({ enabled: true, intervalMinutes: v })}
                     min={30}
                     max={1440}
                     step={30}

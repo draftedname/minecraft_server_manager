@@ -1,5 +1,5 @@
-import { execSync } from "child_process";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { spawnSync } from "child_process";
+import { existsSync, mkdirSync, writeFileSync, readdirSync, unlinkSync, renameSync, chmodSync, rmSync } from "fs";
 import path from "path";
 import { DATA_DIR } from "./config.js";
 import type { JavaInfo } from "@mcservergui/shared";
@@ -11,24 +11,37 @@ function getJavaDir(): string {
   return JAVA_DIR;
 }
 
+export function findLocalJavaPath(): string | null {
+  const javaDir = getJavaDir();
+  if (!existsSync(javaDir)) return null;
+  const entries = readdirSync(javaDir).filter((e) => e.startsWith("jdk-"));
+  if (entries.length === 0) return null;
+  const latest = entries.sort().reverse()[0];
+  const p = path.join(javaDir, latest, "bin", "java");
+  const pWin = p + ".exe";
+  if (existsSync(p)) return p;
+  if (existsSync(pWin)) return pWin;
+  return null;
+}
+
 export function checkJava(): JavaInfo {
   try {
-    const output = execSync('java -version 2>&1', { encoding: "utf-8", timeout: 10000 });
+    const result = spawnSync("java", ["-version"], { encoding: "utf-8", timeout: 10000 });
+    const output = result.stderr || result.stdout || "";
     const match = output.match(/(\d+\.\d+\.\d+)/);
     const version = match ? match[1] : "unknown";
     return {
       installed: true,
       version,
-      path: "java",
+      path: findLocalJavaPath() || "java",
     };
   } catch {
-    const localJava = path.join(JAVA_DIR, "bin", "java");
-    const localJavaWin = localJava + ".exe";
-    if (existsSync(localJava) || existsSync(localJavaWin)) {
+    const localPath = findLocalJavaPath();
+    if (localPath) {
       return {
         installed: true,
         version: "managed",
-        path: localJava,
+        path: localPath,
       };
     }
     return {
@@ -39,83 +52,97 @@ export function checkJava(): JavaInfo {
   }
 }
 
-export async function downloadJava(version: string): Promise<{ success: boolean; path?: string }> {
-  const javaDir = getJavaDir();
+export async function downloadJava(
+  version: string,
+  onProgress?: (msg: string, current: number, total: number) => void
+): Promise<{ success: boolean; path?: string }> {
+  try {
+    const javaDir = getJavaDir();
+    onProgress?.("Resolving Java version...", 0, 1);
 
-  const platform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "mac" : "linux";
-  const arch = process.arch === "x64" ? "x64" : "aarch64";
+    const platform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "mac" : "linux";
+    const arch = process.arch === "x64" ? "x64" : "aarch64";
 
-  const apiUrl = `https://api.adoptium.net/v3/assets/latest/${version}/hotspot?os=${platform}&architecture=${arch}&image_type=jdk`;
+    const apiUrl = `https://api.adoptium.net/v3/assets/latest/${version}/hotspot?os=${platform}&architecture=${arch}&image_type=jdk`;
 
-  const response = await fetch(apiUrl);
-  if (!response.ok) {
+    const response = await fetch(apiUrl);
+    if (!response.ok) return { success: false };
+
+    const data = await response.json() as Array<{
+      binary: { package: { link: string; name: string } };
+    }>;
+
+    if (!data || data.length === 0) return { success: false };
+
+    const binary = data[0].binary;
+    const downloadUrl = binary.package.link;
+
+    const tempPath = path.join(javaDir, "jdk.tar.gz");
+    onProgress?.("Downloading Java...", 0, 100);
+    await downloadFile(downloadUrl, tempPath, onProgress);
+
+    const isZip = binary.package.name.endsWith(".zip");
+    onProgress?.("Extracting Java...", 0, 100);
+
+    if (isZip) {
+      spawnSync("powershell", ["-Command", `Expand-Archive -Path '${tempPath}' -DestinationPath '${javaDir}' -Force`], { stdio: "ignore" });
+    } else {
+      spawnSync("tar", ["-xzf", tempPath, "-C", javaDir], { stdio: "ignore" });
+    }
+
+    const entries = readdirSync(javaDir).filter((e) => e.startsWith("jdk"));
+    if (entries.length === 0) return { success: false };
+
+    const extractedDir = path.join(javaDir, entries[0]);
+    const targetDir = path.join(javaDir, `jdk-${version}`);
+
+    if (existsSync(targetDir)) {
+      rmSync(targetDir, { recursive: true, force: true });
+    }
+
+    renameSync(extractedDir, targetDir);
+
+    if (existsSync(tempPath)) unlinkSync(tempPath);
+
+    if (process.platform !== "win32") {
+      const javaBin = path.join(targetDir, "bin", "java");
+      if (existsSync(javaBin)) chmodSync(javaBin, 0o755);
+    }
+
+    const javaPath = path.join(targetDir, "bin", "java");
+    onProgress?.("Java ready", 100, 100);
+    return { success: true, path: javaPath };
+  } catch (err) {
+    console.error("Failed to download Java:", err);
     return { success: false };
   }
-
-  const data = await response.json() as Array<{
-    binary: { package: { link: string; name: string } };
-  }>;
-
-  if (!data || data.length === 0) {
-    return { success: false };
-  }
-
-  const binary = data[0].binary;
-  const downloadUrl = binary.package.link;
-
-  const tempPath = path.join(javaDir, "jdk.tar.gz");
-  await downloadFile(downloadUrl, tempPath);
-
-  // For Windows, use .zip format from the API
-  // The Adoptium API can return ZIP for Windows
-  const isZip = binary.package.name.endsWith(".zip");
-
-  if (isZip) {
-    // Extract with PowerShell
-    const { execSync } = await import("child_process");
-    execSync(`powershell -Command "Expand-Archive -Path '${tempPath}' -DestinationPath '${javaDir}' -Force"`, { stdio: "ignore" });
-  } else {
-    // tar.gz - extract with node
-    const { execSync } = await import("child_process");
-    execSync(`tar -xzf "${tempPath}" -C "${javaDir}"`, { stdio: "ignore" });
-  }
-
-  // Find the extracted directory
-  const { readdirSync, unlinkSync, renameSync, chmodSync } = await import("fs");
-
-  const entries = readdirSync(javaDir).filter((e) => e.startsWith("jdk"));
-  if (entries.length === 0) {
-    return { success: false };
-  }
-
-  // Rename to a standard name
-  const extractedDir = path.join(javaDir, entries[0]);
-  const targetDir = path.join(javaDir, `jdk-${version}`);
-
-  if (existsSync(targetDir)) {
-    const { rmSync } = await import("fs");
-    rmSync(targetDir, { recursive: true, force: true });
-  }
-
-  renameSync(extractedDir, targetDir);
-
-  // Clean up temp file
-  if (existsSync(tempPath)) unlinkSync(tempPath);
-
-  // Make java executable on unix
-  if (process.platform !== "win32") {
-    const javaBin = path.join(targetDir, "bin", "java");
-    if (existsSync(javaBin)) chmodSync(javaBin, 0o755);
-  }
-
-  const javaPath = path.join(targetDir, "bin", "java");
-  return { success: true, path: javaPath };
 }
 
-async function downloadFile(url: string, dest: string): Promise<void> {
+async function downloadFile(
+  url: string,
+  dest: string,
+  onProgress?: (msg: string, current: number, total: number) => void
+): Promise<void> {
   const response = await fetch(url, { redirect: "follow" });
   if (!response.ok) throw new Error(`HTTP ${response.status} downloading ${url}`);
-  const buffer = Buffer.from(await response.arrayBuffer());
+
+  const contentLength = response.headers.get("content-length");
+  const total = contentLength ? parseInt(contentLength, 10) : 100;
+  const reader = response.body!.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.length;
+    if (onProgress) {
+      onProgress("Downloading Java...", Math.min(received, total), total);
+    }
+  }
+
+  const buffer = Buffer.concat(chunks);
   writeFileSync(dest, buffer);
 }
 

@@ -1,11 +1,66 @@
 import { createWriteStream } from "fs";
-import { writeFileSync } from "fs";
-import https from "https";
 
 const MODRINTH_BASE = "https://api.modrinth.com/v2";
 const USER_AGENT = "mcservergui/1.0 (admin@localhost)";
 
-async function apiFetch(path: string): Promise<any> {
+interface SearchHit {
+  project_id: string;
+  project_type: string;
+  slug: string;
+  author: string;
+  title: string;
+  description: string;
+  categories: string[];
+  versions: string[];
+  downloads: number;
+  follows: number;
+  icon_url: string;
+  client_side: string;
+  server_side: string;
+}
+
+interface SearchResult {
+  hits: SearchHit[];
+  total_hits: number;
+  offset: number;
+  limit: number;
+}
+
+interface ModProject {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  body: string;
+  categories: string[];
+  versions: string[];
+  downloads: number;
+  follows: number;
+  icon_url: string;
+  client_side: string;
+  server_side: string;
+}
+
+export interface ModVersion {
+  id: string;
+  name: string;
+  version_number: string;
+  game_versions: string[];
+  loaders: string[];
+  date_published: string;
+  dependencies: Array<{
+    version_id: string | null;
+    project_id: string | null;
+    dependency_type: "required" | "optional" | "incompatible" | "embedded";
+  }>;
+  files: Array<{
+    url: string;
+    filename: string;
+    size?: number;
+  }>;
+}
+
+async function apiFetch<T>(path: string): Promise<T> {
   const url = `${MODRINTH_BASE}${path}`;
   const response = await fetch(url, {
     headers: { "User-Agent": USER_AGENT },
@@ -25,7 +80,7 @@ export async function searchMods(
   categories?: string[],
   projectType?: string,
   offset?: number
-): Promise<any> {
+): Promise<SearchResult> {
   const facets: string[][] = [[`project_type:${projectType || "mod"}`]];
 
   if (serverSide ?? true) {
@@ -57,42 +112,42 @@ export async function searchMods(
   if (offset) params.set("offset", String(offset));
 
   const queryString = params.toString();
-  return apiFetch(`/search?${queryString}`);
+  return apiFetch<SearchResult>(`/search?${queryString}`);
 }
 
-export async function getProject(id: string): Promise<any> {
-  return apiFetch(`/project/${id}`);
+export async function getProject(id: string): Promise<ModProject> {
+  return apiFetch<ModProject>(`/project/${id}`);
 }
 
 export async function getProjectVersions(
   projectId: string,
   loader?: string,
   gameVersion?: string
-): Promise<any[]> {
+): Promise<ModVersion[]> {
   const params = new URLSearchParams();
   if (loader) params.set("loaders", JSON.stringify([loader]));
   if (gameVersion) params.set("game_versions", JSON.stringify([gameVersion]));
 
   const queryString = params.toString();
   const url = queryString ? `/project/${projectId}/version?${queryString}` : `/project/${projectId}/version`;
-  return apiFetch(url);
+  return apiFetch<ModVersion[]>(url);
 }
 
-export async function getVersion(versionId: string): Promise<any> {
-  return apiFetch(`/version/${versionId}`);
+export async function getVersion(versionId: string): Promise<ModVersion> {
+  return apiFetch<ModVersion>(`/version/${versionId}`);
 }
 
 export async function getLatestCompatibleVersion(
   projectId: string,
   gameVersion: string,
   loader?: string
-): Promise<any | null> {
+): Promise<ModVersion | null> {
   const versions = await getProjectVersions(projectId, loader, gameVersion);
 
   if (!versions || versions.length === 0) return null;
 
   const compatible = versions.filter(
-    (v: any) =>
+    (v) =>
       v.game_versions.includes(gameVersion) &&
       (!loader || v.loaders.includes(loader))
   );
@@ -102,34 +157,17 @@ export async function getLatestCompatibleVersion(
   return compatible[0];
 }
 
-export interface ModVersion {
-  id: string;
-  name: string;
-  version_number: string;
-  game_versions: string[];
-  loaders: string[];
-  dependencies: Array<{
-    version_id: string | null;
-    project_id: string | null;
-    dependency_type: "required" | "optional" | "incompatible" | "embedded";
-  }>;
-  files: Array<{
-    url: string;
-    filename: string;
-  }>;
-}
-
 export async function resolveDependencies(
   versionId: string,
   gameVersion: string,
   loader: string,
   depth: number = 0
-): Promise<{ versions: ModVersion[]; projects: any[] }> {
+): Promise<{ versions: ModVersion[]; projects: ModProject[] }> {
   if (depth > 5) return { versions: [], projects: [] };
 
-  const version = await getVersion(versionId) as ModVersion;
+  const version = await getVersion(versionId);
   const versions: ModVersion[] = [version];
-  const projects: any[] = [];
+  const projects: ModProject[] = [];
   const seenProjectIds = new Set<string>();
 
   if (!version.dependencies) return { versions, projects };
@@ -180,6 +218,22 @@ export async function resolveDependencies(
 export async function downloadModFile(url: string, dest: string): Promise<void> {
   const response = await fetch(url, { redirect: "follow" });
   if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
-  const buffer = Buffer.from(await response.arrayBuffer());
-  writeFileSync(dest, buffer);
+  const writer = createWriteStream(dest);
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      writer.write(Buffer.from(value));
+    }
+    await new Promise<void>((resolve, reject) => {
+      writer.end(resolve);
+      writer.on("error", reject);
+    });
+  } catch (err) {
+    writer.destroy();
+    throw err;
+  }
 }

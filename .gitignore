@@ -11,6 +11,14 @@ data/tmp/
 data/servers.json
 data/backup-schedule.json
 *.log
+build-log*.txt
+dist-electron*/
+release/
+*.blockmap
+latest.yml
+builder-debug.yml
 .env
 .DS_Store
 Thumbs.db
+run.bat
+*.md

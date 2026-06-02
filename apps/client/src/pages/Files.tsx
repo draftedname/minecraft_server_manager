@@ -19,6 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useChunkedUpload } from "@/hooks/useChunkedUpload";
 import { toast } from "@/components/ui/toaster";
+import type { ServerInfo } from "@mcservergui/shared";
 import {
   Table,
   TableBody,
@@ -53,6 +54,16 @@ export default function Files() {
   const [currentPath, setCurrentPath] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploading, progress, error, upload } = useChunkedUpload();
+
+  const { data: serverData } = useQuery<ServerInfo>({
+    queryKey: ["server", serverId],
+    queryFn: async () => {
+      const { data } = await api.get(`/servers/${serverId}`);
+      return data;
+    },
+    enabled: !!serverId,
+  });
+  const isRunning = serverData?.status === "running";
 
   const importWorldMutation = useMutation({
     mutationFn: async (zipPath: string) => {
@@ -132,30 +143,33 @@ export default function Files() {
             ref={fileInputRef}
             type="file"
             className="hidden"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              const dest = currentPath || "";
-              const ok = await upload(file, dest, () => {
-                toast({ title: `Uploaded ${file.name}` });
-                queryClient.invalidateQueries({ queryKey: ["server", serverId, "files", currentPath] });
-              });
-              if (e.target) e.target.value = "";
-            }}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const dest = currentPath || "";
+                const ok = await upload(file, dest);
+                if (ok) {
+                  toast({ title: `Uploaded ${file.name}` });
+                  queryClient.invalidateQueries({ queryKey: ["server", serverId, "files", currentPath] });
+                }
+                if (e.target) e.target.value = "";
+              }}
           />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-          >
-            {uploading ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-1" />
-            ) : (
-              <Upload className="h-4 w-4 mr-1" />
-            )}
-            Upload
-          </Button>
+          <span title={isRunning ? "Stop the server first" : ""}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || isRunning}
+            >
+              {uploading ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Upload className="h-4 w-4 mr-1" />
+              )}
+              Upload
+            </Button>
+          </span>
         </div>
       </div>
 
@@ -250,15 +264,17 @@ export default function Files() {
                       <TableCell>
                         <div className="flex gap-1">
                           {entry.type === "file" && entry.name.endsWith(".zip") && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => importWorldMutation.mutate(entry.path)}
-                              disabled={importWorldMutation.isPending}
-                              title="Import as World"
-                            >
-                              <Globe className="h-4 w-4" />
-                            </Button>
+                            <span title={isRunning ? "Stop the server first" : ""}>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => importWorldMutation.mutate(entry.path)}
+                                disabled={importWorldMutation.isPending || isRunning}
+                                title="Import as World"
+                              >
+                                <Globe className="h-4 w-4" />
+                              </Button>
+                            </span>
                           )}
                           {entry.type === "file" && (
                             <Button
@@ -270,15 +286,18 @@ export default function Files() {
                               <Download className="h-4 w-4" />
                             </Button>
                           )}
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => handleDelete(entry)}
-                            title="Delete"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <span title={isRunning ? "Stop the server first" : ""}>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => handleDelete(entry)}
+                              disabled={isRunning}
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </span>
                         </div>
                       </TableCell>
                     </TableRow>

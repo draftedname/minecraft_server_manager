@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Settings, Save, Loader2 } from "lucide-react";
@@ -17,7 +17,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/toaster";
-import type { ServerConfig } from "@mcservergui/shared";
+import type { ServerConfig, ServerInfo } from "@mcservergui/shared";
 
 interface PropertyDef {
   type: string;
@@ -36,6 +36,8 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [localProps, setLocalProps] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
+  const dirtyRef = useRef(false);
+  const initialLoadDone = useRef(false);
 
   const { data, isLoading } = useQuery<{
     properties: Record<string, string>;
@@ -51,13 +53,14 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
-    if (data?.properties) {
+    if (data?.properties && !initialLoadDone.current) {
+      initialLoadDone.current = true;
       setLocalProps({ ...data.properties });
       setDirty(false);
     }
   }, [data?.properties]);
 
-  const { data: server } = useQuery<{ config: ServerConfig }>({
+  const { data: serverData } = useQuery<ServerInfo>({
     queryKey: ["server", serverId],
     queryFn: async () => {
       const { data } = await api.get(`/servers/${serverId}`);
@@ -65,6 +68,9 @@ export default function SettingsPage() {
     },
     enabled: !!serverId,
   });
+
+  const server = serverData?.config;
+  const isRunning = serverData?.status === "running";
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -106,17 +112,19 @@ export default function SettingsPage() {
           <Settings className="h-5 w-5 text-primary" />
           <div>
             <h1 className="text-lg font-bold">Server Settings</h1>
-            <p className="text-xs text-muted-foreground">{server?.config.name}</p>
+            <p className="text-xs text-muted-foreground">{server?.name}</p>
           </div>
         </div>
-        <Button onClick={() => saveMutation.mutate()} disabled={!dirty || saveMutation.isPending}>
-          {saveMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4" />
-          )}
-          Save
-        </Button>
+        <span title={isRunning ? "Stop the server first" : ""}>
+          <Button onClick={() => saveMutation.mutate()} disabled={!dirty || saveMutation.isPending || isRunning}>
+            {saveMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Save
+          </Button>
+        </span>
       </div>
 
       <div className="flex-1 overflow-auto p-6">

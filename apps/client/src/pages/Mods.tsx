@@ -14,6 +14,7 @@ import {
   RefreshCcw,
   ChevronLeft,
   ChevronRight,
+  ArrowUp,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/components/ui/toaster";
-import type { ServerConfig, ModInfo } from "@mcservergui/shared";
+import type { ServerConfig, ServerInfo, ModInfo } from "@mcservergui/shared";
 
 interface ModrinthProject {
   project_id: string;
@@ -102,7 +103,31 @@ export default function Mods() {
   const [selectedProject, setSelectedProject] = useState<ModrinthProject | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string>("");
 
-  const { data: server } = useQuery<{ config: ServerConfig }>({
+  // Per-mod update tracking
+  const [updatesMap, setUpdatesMap] = useState<Record<string, { currentVersion: string; latestVersion: string; latestVersionId: string; projectId: string }>>({});
+
+  // Auto check updates when mods are loaded
+  const { data: updatesData } = useQuery({
+    queryKey: ["server", serverId, "mods", "updates"],
+    queryFn: async () => {
+      const { data } = await api.post(`/servers/${serverId}/mods/check-updates`);
+      return data;
+    },
+    enabled: !!serverId,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (updatesData?.updates) {
+      const map: Record<string, any> = {};
+      for (const u of updatesData.updates) {
+        map[u.filename] = u;
+      }
+      setUpdatesMap(map);
+    }
+  }, [updatesData]);
+
+  const { data: serverData } = useQuery<ServerInfo>({
     queryKey: ["server", serverId],
     queryFn: async () => {
       const { data } = await api.get(`/servers/${serverId}`);
@@ -110,6 +135,9 @@ export default function Mods() {
     },
     enabled: !!serverId,
   });
+
+  const server = serverData?.config;
+  const isRunning = serverData?.status === "running";
 
   const { data: mods, isLoading: modsLoading } = useQuery<ModInfo[]>({
     queryKey: ["server", serverId, "mods"],
@@ -120,8 +148,8 @@ export default function Mods() {
     enabled: !!serverId,
   });
 
-  const loaderFilter = server?.config.type === "fabric" ? "fabric" : undefined;
-  const gameVersion = server?.config.gameVersion;
+  const loaderFilter = server?.type === "fabric" ? "fabric" : undefined;
+  const gameVersion = server?.gameVersion;
 
   const { data: searchResults, isLoading: searching } = useQuery<{ hits: ModrinthProject[]; total_hits: number }>({
     queryKey: ["modrinth", "search", searchQuery, loaderFilter, gameVersion, serverSideOnly, sort, selectedCategories, page],
@@ -164,6 +192,9 @@ export default function Mods() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["server", serverId, "mods"] });
     },
+    onError: (err: any) => {
+      toast({ title: "Toggle failed", description: err.response?.data?.error || err.message, variant: "destructive" });
+    },
   });
 
   const removeMutation = useMutation({
@@ -173,6 +204,9 @@ export default function Mods() {
     onSuccess: () => {
       toast({ title: "Mod removed" });
       queryClient.invalidateQueries({ queryKey: ["server", serverId, "mods"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Remove failed", description: err.response?.data?.error || err.message, variant: "destructive" });
     },
   });
 
@@ -202,6 +236,11 @@ export default function Mods() {
       return data;
     },
     onSuccess: (data: any) => {
+      const map: Record<string, any> = {};
+      for (const u of data.updates || []) {
+        map[u.filename] = u;
+      }
+      setUpdatesMap(map);
       if (data.outdated === 0) {
         toast({ title: "All mods are up to date" });
       } else {
@@ -222,8 +261,31 @@ export default function Mods() {
       return data;
     },
     onSuccess: (data: any) => {
-      toast({ title: `Updated ${data.updated} mod(s)` });
+      if (data.updated === 0) {
+        toast({ title: "All mods are up to date" });
+      } else {
+        toast({ title: `Updated ${data.updated} mod(s)` });
+      }
       queryClient.invalidateQueries({ queryKey: ["server", serverId, "mods"] });
+      queryClient.invalidateQueries({ queryKey: ["server", serverId, "mods", "updates"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Update failed", description: err.response?.data?.error || err.message, variant: "destructive" });
+    },
+  });
+
+  const updateSingleMutation = useMutation({
+    mutationFn: async ({ filename, latestVersionId, projectId }: { filename: string; latestVersionId: string; projectId: string }) => {
+      await api.post(`/servers/${serverId}/mods/install`, {
+        versionId: latestVersionId,
+        projectId,
+      });
+      await api.delete(`/servers/${serverId}/mods/${encodeURIComponent(filename)}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Mod updated" });
+      queryClient.invalidateQueries({ queryKey: ["server", serverId, "mods"] });
+      queryClient.invalidateQueries({ queryKey: ["server", serverId, "mods", "updates"] });
     },
     onError: (err: any) => {
       toast({ title: "Update failed", description: err.response?.data?.error || err.message, variant: "destructive" });
@@ -253,7 +315,7 @@ export default function Mods() {
         <Package className="h-5 w-5 text-primary" />
         <div>
           <h1 className="text-lg font-bold">Mods</h1>
-          <p className="text-xs text-muted-foreground">{server?.config.name}</p>
+          <p className="text-xs text-muted-foreground">{server?.name}</p>
         </div>
       </div>
 
@@ -279,39 +341,53 @@ export default function Mods() {
               <div className="space-y-2">
                 {(mods.length > 0) && (
                   <div className="flex gap-2 mb-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => checkUpdatesMutation.mutate()}
-                      disabled={checkUpdatesMutation.isPending}
-                    >
-                      {checkUpdatesMutation.isPending ? (
-                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                      ) : (
-                        <RefreshCcw className="h-3 w-3 mr-1" />
-                      )}
-                      Check for Updates
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => updateAllMutation.mutate()}
-                      disabled={updateAllMutation.isPending}
-                    >
-                      {updateAllMutation.isPending ? (
-                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                      ) : (
-                        <Download className="h-3 w-3 mr-1" />
-                      )}
-                      Update All
-                    </Button>
+                    <span title={isRunning ? "Stop the server first" : ""}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => checkUpdatesMutation.mutate()}
+                        disabled={checkUpdatesMutation.isPending || isRunning}
+                      >
+                        {checkUpdatesMutation.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : (
+                          <RefreshCcw className="h-3 w-3 mr-1" />
+                        )}
+                        Check for Updates
+                      </Button>
+                    </span>
+                    <span title={isRunning ? "Stop the server first" : ""}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => updateAllMutation.mutate()}
+                        disabled={updateAllMutation.isPending || isRunning}
+                      >
+                        {updateAllMutation.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : (
+                          <Download className="h-3 w-3 mr-1" />
+                        )}
+                        Update All
+                      </Button>
+                    </span>
                   </div>
                 )}
-                {mods.map((mod) => (
+                {mods.map((mod) => {
+                  const updateInfo = updatesMap[mod.filename];
+                  return (
                   <Card key={mod.filename}>
                     <CardContent className="flex items-center justify-between p-4">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium text-sm">{mod.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="truncate font-medium text-sm">{mod.name}</p>
+                          {updateInfo && (
+                            <div className="flex items-center gap-1" title={`${updateInfo.currentVersion} \u2192 ${updateInfo.latestVersion}`}>
+                              <div className="h-2 w-2 rounded-full bg-green-400" />
+                              <span className="text-xs text-green-400">{updateInfo.latestVersion}</span>
+                            </div>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground">
                           {mod.filename} - {formatSize(mod.size)}
                         </p>
@@ -322,26 +398,51 @@ export default function Mods() {
                         ) : (
                           <Badge variant="secondary">Disabled</Badge>
                         )}
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => toggleMutation.mutate({ filename: mod.filename })}
-                          title={mod.enabled ? "Disable" : "Enable"}
-                        >
-                          {mod.enabled ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => removeMutation.mutate(mod.filename)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {updateInfo && (
+                          <span title={isRunning ? "Stop the server first" : ""}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-green-500 border-green-500 hover:bg-green-500/10"
+                              onClick={() => updateSingleMutation.mutate({ filename: mod.filename, latestVersionId: updateInfo.latestVersionId, projectId: updateInfo.projectId })}
+                              disabled={updateSingleMutation.isPending || isRunning}
+                            >
+                              {updateSingleMutation.isPending ? (
+                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                              ) : (
+                                <ArrowUp className="h-3 w-3 mr-1" />
+                              )}
+                              Update
+                            </Button>
+                          </span>
+                        )}
+                        <span title={isRunning ? "Stop the server first" : ""}>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => toggleMutation.mutate({ filename: mod.filename })}
+                            title={mod.enabled ? "Disable" : "Enable"}
+                            disabled={isRunning}
+                          >
+                            {mod.enabled ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
+                          </Button>
+                        </span>
+                        <span title={isRunning ? "Stop the server first" : ""}>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => removeMutation.mutate(mod.filename)}
+                            disabled={isRunning}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </span>
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                );
+              })}
               </div>
             )}
           </TabsContent>
@@ -452,13 +553,16 @@ export default function Mods() {
                             </Badge>
                           </div>
                         </div>
-                        <Button
-                          size="sm"
-                          onClick={() => handleInstallClick(project)}
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          Install
-                        </Button>
+                        <span title={isRunning ? "Stop the server first" : ""}>
+                          <Button
+                            size="sm"
+                            onClick={() => handleInstallClick(project)}
+                            disabled={isRunning}
+                          >
+                            <Download className="h-3 w-3 mr-1" />
+                            Install
+                          </Button>
+                        </span>
                       </div>
                     </CardContent>
                   </Card>
@@ -593,19 +697,21 @@ export default function Mods() {
               >
                 Cancel
               </Button>
-              <Button
-                onClick={handleConfirmInstall}
-                disabled={!selectedVersionId || installMutation.isPending}
-              >
-                {installMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                    Installing...
-                  </>
-                ) : (
-                  "Install"
-                )}
-              </Button>
+              <span title={isRunning ? "Stop the server first" : ""}>
+                <Button
+                  onClick={handleConfirmInstall}
+                  disabled={!selectedVersionId || installMutation.isPending || isRunning}
+                >
+                  {installMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                      Installing...
+                    </>
+                  ) : (
+                    "Install"
+                  )}
+                </Button>
+              </span>
             </div>
           </div>
         </DialogContent>

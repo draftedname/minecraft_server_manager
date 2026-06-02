@@ -60,6 +60,7 @@ export interface WorldInfo {
   name: string;
   size: number;
   lastModified: string;
+  isActive: boolean;
 }
 
 export interface BackupMeta {

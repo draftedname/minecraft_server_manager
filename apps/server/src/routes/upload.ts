@@ -1,10 +1,11 @@
 import { Router, Request, Response } from "express";
 import path from "path";
-import { existsSync, mkdirSync, createWriteStream, rmSync, readFileSync, readdirSync, statSync } from "fs";
+import { existsSync, mkdirSync, createWriteStream, createReadStream, rmSync, readdirSync, statSync, unlinkSync } from "fs";
+import { finished } from "stream/promises";
 import { v4 as uuid } from "uuid";
 import { DATA_DIR } from "../services/config.js";
-
-const router = Router();
+import { safeJoin } from "../services/safeJoin.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
 
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 
@@ -12,42 +13,22 @@ function p(params: any, key: string): string {
   return String(params[key]);
 }
 
-// Track active upload sessions
-const uploadSessions = new Map<string, {
+interface UploadSession {
   filename: string;
   totalChunks: number;
   receivedChunks: Set<number>;
-  destDir: string;
-}>();
+}
 
-// Initialize a new chunked upload
-router.post("/upload/init", (req: Request, res: Response) => {
-  const { filename, totalChunks, destination } = req.body;
+// Track active upload sessions
+const uploadSessions = new Map<string, UploadSession>();
 
-  if (!filename || !totalChunks) {
-    res.status(400).json({ error: "filename and totalChunks are required" });
-    return;
-  }
+// --- raw chunk router (mounted before express.json to avoid buffering) ---
 
-  const uploadId = uuid();
-  const uploadDir = path.join(UPLOADS_DIR, uploadId);
+const chunkRouter = Router();
 
-  if (!existsSync(uploadDir)) {
-    mkdirSync(uploadDir, { recursive: true });
-  }
+const MAX_CHUNK_SIZE = 2 * 1024 * 1024; // 2MB per chunk
 
-  uploadSessions.set(uploadId, {
-    filename,
-    totalChunks,
-    receivedChunks: new Set(),
-    destDir: destination || "",
-  });
-
-  res.json({ uploadId });
-});
-
-// Upload a single chunk
-router.post("/upload/:uploadId/chunk/:index", (req: Request, res: Response) => {
+chunkRouter.post("/upload/:uploadId/chunk/:index", (req: Request, res: Response) => {
   const uploadId = p(req.params, "uploadId");
   const index = parseInt(p(req.params, "index"), 10);
 
@@ -62,35 +43,85 @@ router.post("/upload/:uploadId/chunk/:index", (req: Request, res: Response) => {
     return;
   }
 
-  // Collect raw body chunks
-  const chunks: Buffer[] = [];
-  req.on("data", (chunk: Buffer) => chunks.push(chunk));
-  req.on("end", () => {
-    try {
-      const chunkData = Buffer.concat(chunks);
-      const chunkPath = path.join(UPLOADS_DIR, uploadId, `chunk-${index}`);
+  let size = 0;
+  let exceeded = false;
+  const chunkPath = path.join(UPLOADS_DIR, uploadId, `chunk-${index}`);
+  const ws = createWriteStream(chunkPath);
 
-      // Write chunk to disk
-      const ws = createWriteStream(chunkPath);
-      ws.write(chunkData);
-      ws.end(() => {
-        session.receivedChunks.add(index);
-        res.json({ ok: true, index, received: session.receivedChunks.size });
-      });
-    } catch (err: any) {
+  req.on("data", (chunk: Buffer) => {
+    if (exceeded) return;
+    size += chunk.length;
+    if (size > MAX_CHUNK_SIZE) {
+      exceeded = true;
+      ws.destroy();
+      res.status(413).json({ error: "Chunk too large" });
+      res.on("finish", () => req.destroy());
+      return;
+    }
+    ws.write(chunk);
+  });
+
+  req.on("end", () => {
+    ws.end(() => {
+      session.receivedChunks.add(index);
+      res.json({ ok: true, index, received: session.receivedChunks.size });
+    });
+  });
+
+  ws.on("error", (err) => {
+    if (!res.headersSent) {
       res.status(500).json({ error: err.message });
     }
   });
 
   req.on("error", (err) => {
-    res.status(500).json({ error: err.message });
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    }
   });
 });
 
+// --- main upload router (init, finalize, cleanup) ---
+
+const router = Router();
+
+const MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024; // 4GB total
+
+// Initialize a new chunked upload
+router.post("/upload/init", (req: Request, res: Response) => {
+  const { filename, totalChunks } = req.body;
+
+  if (!filename || !totalChunks) {
+    res.status(400).json({ error: "filename and totalChunks are required" });
+    return;
+  }
+
+  if (totalChunks > 4096) {
+    res.status(400).json({ error: "Too many chunks (max 4096)" });
+    return;
+  }
+
+  const uploadId = uuid();
+  const uploadDir = path.join(UPLOADS_DIR, uploadId);
+
+  if (!existsSync(uploadDir)) {
+    mkdirSync(uploadDir, { recursive: true });
+  }
+
+  uploadSessions.set(uploadId, {
+    filename,
+    totalChunks,
+    receivedChunks: new Set(),
+  });
+
+  res.json({ uploadId });
+});
+
 // Finalize: assemble chunks into final file
-router.post("/upload/:uploadId/finalize", (req: Request, res: Response) => {
+router.post("/upload/:uploadId/finalize", asyncHandler(async (req: Request, res: Response) => {
   const uploadId = p(req.params, "uploadId");
   const session = uploadSessions.get(uploadId);
+  const uploadDir = path.join(UPLOADS_DIR, uploadId);
 
   if (!session) {
     res.status(404).json({ error: "Upload session not found" });
@@ -98,55 +129,66 @@ router.post("/upload/:uploadId/finalize", (req: Request, res: Response) => {
   }
 
   if (session.receivedChunks.size !== session.totalChunks) {
+    uploadSessions.delete(uploadId);
+    try { rmSync(uploadDir, { recursive: true, force: true }); } catch {}
     res.status(400).json({
       error: `Missing chunks: received ${session.receivedChunks.size}/${session.totalChunks}`,
     });
     return;
   }
 
+  let destFile = "";
+  let dest: ReturnType<typeof createWriteStream> | null = null;
+
   try {
-    const uploadDir = path.join(UPLOADS_DIR, uploadId);
-
-    // Determine destination
-    const destFile = session.destDir
-      ? path.join(session.destDir, session.filename)
-      : path.join(uploadDir, session.filename);
-
+    destFile = safeJoin(UPLOADS_DIR, `${uploadId}-${session.filename}`);
     const destDir = path.dirname(destFile);
     if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
 
-    // Open destination write stream (truncate)
-    const dest = createWriteStream(destFile, { flags: "w" });
     let assembledSize = 0;
+    dest = createWriteStream(destFile, { flags: "w" });
 
-    // Assemble chunks in order
     for (let i = 0; i < session.totalChunks; i++) {
       const chunkPath = path.join(uploadDir, `chunk-${i}`);
       if (!existsSync(chunkPath)) {
-        res.status(500).json({ error: `Chunk ${i} missing on disk` });
-        return;
+        throw new Error(`Chunk ${i} missing on disk`);
       }
 
-      const data = readFileSync(chunkPath);
-      dest.write(data);
-      assembledSize += data.length;
+      const { size: chunkSize } = statSync(chunkPath);
+      assembledSize += chunkSize;
+      if (assembledSize > MAX_FILE_SIZE) {
+        throw new Error("File exceeds maximum size");
+      }
+
+      const source = createReadStream(chunkPath);
+      source.pipe(dest, { end: false });
+      await finished(source);
     }
 
-    dest.end(() => {
-      // Clean up upload session
-      try { rmSync(uploadDir, { recursive: true, force: true }); } catch {}
-      uploadSessions.delete(uploadId);
-
-      res.json({
-        success: true,
-        path: destFile,
-        size: assembledSize,
-      });
+    await new Promise<void>((resolve, reject) => {
+      dest!.end(() => resolve());
+      dest!.on("error", reject);
     });
   } catch (err: any) {
+    if (dest) {
+      try { dest.destroy(); } catch {}
+    }
+    if (destFile && existsSync(destFile)) {
+      try { unlinkSync(destFile); } catch {}
+    }
     res.status(500).json({ error: err.message });
+    return;
+  } finally {
+    uploadSessions.delete(uploadId);
+    try { rmSync(uploadDir, { recursive: true, force: true }); } catch {}
   }
-});
+
+  res.json({
+    success: true,
+    path: destFile,
+    size: statSync(destFile).size,
+  });
+}));
 
 // Cleanup stale uploads older than 1 hour
 setInterval(() => {
@@ -163,6 +205,6 @@ setInterval(() => {
       }
     } catch {}
   }
-}, 600000); // every 10 minutes
+}, 600000);
 
-export { router as uploadRouter };
+export { router as uploadRouter, chunkRouter as uploadChunkRouter };

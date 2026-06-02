@@ -35,7 +35,6 @@ interface NetworkState {
   address: string | null;
   playitClaimUrl: string | null;
   playitLinked: boolean;
-  usePlayit: boolean;
   error: string | null;
 }
 
@@ -59,7 +58,6 @@ export default function NetworkCard({ isRunning }: { isRunning: boolean }) {
     if (!serverId) return;
     const socket = getSocket();
     if (!socket.connected) socket.connect();
-    socket.emit("console:subscribe", serverId);
 
     const handler = (state: NetworkState) => {
       queryClient.setQueryData(["server", serverId, "network"], state);
@@ -99,16 +97,7 @@ export default function NetworkCard({ isRunning }: { isRunning: boolean }) {
       await api.post(`/servers/${serverId}/network/disable`);
     },
     onSuccess: () => {
-      toast({ title: "Public mode disabled" });
-      queryClient.invalidateQueries({ queryKey: ["server", serverId, "network"] });
-    },
-  });
-
-  const togglePlayitMutation = useMutation({
-    mutationFn: async (usePlayit: boolean) => {
-      await api.put(`/servers/${serverId}/network/playit`, { usePlayit });
-    },
-    onSuccess: () => {
+      toast({ title: "Networking disabled" });
       queryClient.invalidateQueries({ queryKey: ["server", serverId, "network"] });
     },
   });
@@ -124,8 +113,11 @@ export default function NetworkCard({ isRunning }: { isRunning: boolean }) {
 
   const copyAddress = () => {
     if (netState?.address) {
-      navigator.clipboard.writeText(netState.address);
-      toast({ title: "Address copied!" });
+      navigator.clipboard.writeText(netState.address).then(() => {
+        toast({ title: "Address copied!" });
+      }).catch(() => {
+        toast({ title: "Failed to copy address", variant: "destructive" });
+      });
     }
   };
 
@@ -146,21 +138,16 @@ export default function NetworkCard({ isRunning }: { isRunning: boolean }) {
                 ) : (
                   <WifiOff className="h-4 w-4 text-muted-foreground" />
                 )}
-                Networking
+                {netState.enabled ? "Using Playit.gg Tunnel" : "Use playit.gg instead"}
               </CardTitle>
               <CardDescription>
-                {!isRunning
-                  ? "Start the server first"
-                  : netState.address
-                  ? "Server is publicly accessible"
-                  : netState.enabled
-                  ? "Setting up..."
-                  : "Allow friends to join"}
+                {netState.enabled ? "Server is publicly accessible" : "if you can't portforward"}
               </CardDescription>
             </div>
             <Switch
               checked={netState.enabled}
               onCheckedChange={(v) => {
+                if (!isRunning) return;
                 if (v) enableMutation.mutate();
                 else disableMutation.mutate();
               }}
@@ -169,63 +156,58 @@ export default function NetworkCard({ isRunning }: { isRunning: boolean }) {
           </div>
         </CardHeader>
 
-        {netState.enabled && (
-          <CardContent className="pt-0 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="use-playit" className="text-xs cursor-pointer">Use playit.gg tunnel</Label>
-              </div>
-              <Switch
-                id="use-playit"
-                checked={netState.usePlayit ?? true}
-                onCheckedChange={(v) => togglePlayitMutation.mutate(v)}
+        <CardContent className="pt-0 space-y-3">
+          {!netState.enabled && (
+            <p className="text-xs text-muted-foreground">
+              Set up port forwarding on your router (port 25565 TCP). Friends connect using your public IP.
+            </p>
+          )}
+
+          {netState.enabled && !netState.address && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Server Address</Label>
+              <p className="text-xs text-muted-foreground">Copy from playit's window and paste below.</p>
+              <Input
+                placeholder="e.g. copper-pig.gl.joinmc.link"
+                className="font-mono text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.target as HTMLInputElement).value.trim()) {
+                    setAddressMutation.mutate((e.target as HTMLInputElement).value.trim());
+                  }
+                }}
               />
             </div>
-            {!netState.usePlayit && (
-              <p className="text-xs text-muted-foreground">
-                Direct connection. Set up port forwarding on your router (port 25565 TCP). Friends connect using your public IP.
-              </p>
-            )}
+          )}
 
-            {netState.enabled && netState.usePlayit && !netState.address && (
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Server Address</Label>
-                <p className="text-xs text-muted-foreground">Copy from playit's window and paste below.</p>
+          {(netState.address || !netState.enabled) && (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Server Address</Label>
+              <div className="flex gap-2">
                 <Input
-                  placeholder="e.g. copper-pig.gl.joinmc.link"
-                  className="font-mono text-sm"
+                  value={netState.address || ""}
+                  readOnly={netState.enabled}
+                  placeholder={netState.enabled ? undefined : "e.g. 123.45.67.89:25565"}
+                  className="font-mono text-sm flex-1"
                   onBlur={(e) => {
-                    if (e.target.value.trim()) setAddressMutation.mutate(e.target.value.trim());
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.target as HTMLInputElement).value.trim()) {
-                      setAddressMutation.mutate((e.target as HTMLInputElement).value.trim());
+                    if (!netState.enabled) {
+                      setAddressMutation.mutate(e.target.value.trim());
                     }
                   }}
                 />
+                <Button size="icon" variant="outline" onClick={copyAddress} disabled={!netState.address}>
+                  <Copy className="h-4 w-4" />
+                </Button>
               </div>
-            )}
+            </div>
+          )}
 
-            {netState.address && (
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Server Address</Label>
-                <div className="flex gap-2">
-                  <Input value={netState.address} readOnly className="font-mono text-sm flex-1" />
-                  <Button size="icon" variant="outline" onClick={copyAddress}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {(enableMutation.isPending || disableMutation.isPending) && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                {enableMutation.isPending ? "Establishing tunnel..." : "Disabling..."}
-              </div>
-            )}
-          </CardContent>
-        )}
+          {(enableMutation.isPending || disableMutation.isPending) && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {enableMutation.isPending ? "Establishing tunnel..." : "Disabling..."}
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       <Dialog open={guideOpen} onOpenChange={setGuideOpen}>
@@ -257,20 +239,21 @@ export default function NetworkCard({ isRunning }: { isRunning: boolean }) {
 
               <Separator />
 
-              <div className="flex gap-3">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground flex-shrink-0">2</span>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Download the playit agent</p>
-                  <p className="text-xs text-muted-foreground">
-                    If the auto-download failed, get it from{" "}
-                    <a href="https://playit.gg/download" target="_blank" className="text-primary underline">playit.gg/download</a>
-                    {" "}and place the .exe at:
-                  </p>
-                  <code className="block text-xs bg-background-hover p-1.5 rounded select-all">
-                    data\playit\playit.exe
-                  </code>
-                </div>
-              </div>
+                  <div className="flex gap-3">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground flex-shrink-0">2</span>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">Install the playit.gg agent</p>
+                      <p className="text-xs text-muted-foreground">
+                        Download and run the installer from{" "}
+                        <a href="https://playit.gg/download" target="_blank" className="text-primary underline">playit.gg/download</a>.
+                        This registers playitd as a Windows service — the app will control it automatically.
+                      </p>
+                      <Button variant="outline" size="sm" onClick={() => window.open("https://playit.gg/download", "_blank")}>
+                        <ExternalLink className="h-3 w-3 mr-1" />
+                        Download playit.gg
+                      </Button>
+                    </div>
+                  </div>
 
               <Separator />
 
@@ -319,7 +302,7 @@ export default function NetworkCard({ isRunning }: { isRunning: boolean }) {
                 <div className="space-y-1">
                   <p className="text-sm font-medium">Restart networking</p>
                   <p className="text-xs text-muted-foreground">
-                    After creating the tunnel on playit.gg, toggle the Networking switch <strong>off and on again</strong>.
+                    After creating the tunnel on playit.gg, toggle the switch <strong>off and on again</strong>.
                     Your server address will appear here.
                   </p>
                 </div>

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import api from "@/lib/api";
 
 const CHUNK_SIZE = 1 * 1024 * 1024; // 1MB
@@ -15,6 +15,23 @@ export function useChunkedUpload() {
     progress: 0,
     error: null,
   });
+  const mountedRef = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  const cancel = useCallback(() => {
+    abortRef.current?.abort();
+    if (mountedRef.current) {
+      setState({ uploading: false, progress: 0, error: null });
+    }
+  }, []);
 
   const upload = useCallback(
     async (
@@ -22,20 +39,23 @@ export function useChunkedUpload() {
       destination: string,
       onComplete?: (path: string) => void
     ): Promise<boolean> => {
+      if (!mountedRef.current) return false;
       setState({ uploading: true, progress: 0, error: null });
+
+      abortRef.current?.abort();
+      abortRef.current = new AbortController();
+      const signal = abortRef.current.signal;
 
       try {
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
-        // Step 1: Init upload
         const { data: initData } = await api.post("/upload/init", {
           filename: file.name,
           totalChunks,
           destination,
-        });
+        }, { signal });
         const { uploadId } = initData;
 
-        // Step 2: Upload each chunk
         for (let i = 0; i < totalChunks; i++) {
           const start = i * CHUNK_SIZE;
           const end = Math.min(start + CHUNK_SIZE, file.size);
@@ -50,9 +70,8 @@ export function useChunkedUpload() {
                 `/upload/${uploadId}/chunk/${i}`,
                 chunk,
                 {
-                  headers: {
-                    "Content-Type": "application/octet-stream",
-                  },
+                  headers: { "Content-Type": "application/octet-stream" },
+                  signal,
                 }
               );
               break;
@@ -62,25 +81,32 @@ export function useChunkedUpload() {
             }
           }
 
-          setState((s) => ({
-            ...s,
-            progress: Math.round(((i + 1) / totalChunks) * 100),
-          }));
+          if (!mountedRef.current) return false;
+          setState((s) => ({ ...s, progress: Math.round(((i + 1) / totalChunks) * 100) }));
         }
 
-        // Step 3: Finalize
-        const { data: finalData } = await api.post(`/upload/${uploadId}/finalize`);
-        setState({ uploading: false, progress: 100, error: null });
-        onComplete?.(finalData.path);
+        const { data: finalData } = await api.post(`/upload/${uploadId}/finalize`, {}, { signal });
+        if (mountedRef.current) {
+          setState({ uploading: false, progress: 100, error: null });
+          onComplete?.(finalData.path);
+        }
         return true;
       } catch (err: any) {
+        if (err?.name === "CanceledError") {
+          if (mountedRef.current) {
+            setState({ uploading: false, progress: 0, error: null });
+          }
+          return false;
+        }
         const msg = err.response?.data?.error || err.message || "Upload failed";
-        setState({ uploading: false, progress: 0, error: msg });
+        if (mountedRef.current) {
+          setState({ uploading: false, progress: 0, error: msg });
+        }
         return false;
       }
     },
     []
   );
 
-  return { ...state, upload };
+  return { ...state, upload, cancel };
 }
