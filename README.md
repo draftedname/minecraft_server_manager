@@ -1,6 +1,6 @@
 # MC Server GUI
 
-A standalone desktop application for managing Minecraft servers — no command line, no VPS, no Docker. Java auto-downloaded on first launch. Packaged as a single Electron executable for Windows.
+A standalone desktop application for managing Minecraft servers no command line, no VPS, no Docker. Java auto-downloaded on first launch. Packaged as a single Electron executable for Windows.
 
 ---
 
@@ -10,7 +10,7 @@ A standalone desktop application for managing Minecraft servers — no command l
 
 ---
 
-## Getting Started — Regular Users
+## Getting Started : Regular Users
 
 **No prerequisites.** Just download and run.
 
@@ -20,7 +20,7 @@ A standalone desktop application for managing Minecraft servers — no command l
 2. Run the installer (default settings are fine)
 3. Launch from the desktop shortcut or Start Menu
 
-**Or use the portable version** (no install — extract and run `MC Server GUI.exe`).
+**Or use the portable version** (no install extract and run `MC Server GUI.exe`).
 
 ### Using the App
 
@@ -49,7 +49,7 @@ MC Server GUI.exe
 
 ---
 
-## Getting Started — Developers
+## Getting Started: Developers
 
 me and some ai :3 (all bugs and tests and security stuff are handled by me)
 
@@ -120,17 +120,9 @@ Output: `dist-electron/MC Server GUI Setup 1.0.0.exe`
 
 ---
 
-## Usage & API
-
-The dashboard has 10 pages: Dashboard, Server Dashboard, New Server, Console, Mods, Worlds, Files, Players, Settings, and Drive Settings.
-
-Full API documentation is in [`TECHNICAL_REPORT.txt`](TECHNICAL_REPORT.txt) — every route, request body, and response.
-
----
-
 ## License
 
-GNU General Public License v3.0 — see [`LICENSE`](LICENSE).
+GNU General Public License v3.0 see [`LICENSE`](LICENSE).
 
 ---
 
