@@ -20,8 +20,6 @@ A standalone desktop application for managing Minecraft servers no command line,
 2. Run the installer (default settings are fine)
 3. Launch from the desktop shortcut or Start Menu
 
-**Or use the portable version** (no install extract and run `MC Server GUI.exe`).
-
 ### Using the App
 
 1. The app opens as a desktop window with the web dashboard
