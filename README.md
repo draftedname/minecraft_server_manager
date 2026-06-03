@@ -6,7 +6,7 @@ A standalone desktop application for managing Minecraft servers — no command l
 
 ## Screenshots
 
-> *(Coming soon — dashboard, console, and mod browser screenshots)*
+> *(Coming soon dashboard, console, and mod browser screenshots)*
 
 ---
 
