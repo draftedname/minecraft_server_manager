@@ -22,3 +22,4 @@ builder-debug.yml
 Thumbs.db
 run.bat
 *.md
+!README.md
