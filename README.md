@@ -130,3 +130,6 @@ GNU General Public License v3.0 see [`LICENSE`](LICENSE).
 - **X:** [@drafted_name](https://x.com/drafted_name)
 - **Bugs & features:** [GitHub Issues](https://github.com/draftedname/mcservergui/issues)
 - **Sponsorships:** email above
+
+
+PS: This is my absolute first time using github and trying to create an app that any user can use with no problems, so any feedback of any kind wether it's for the github page or the app itself is very welcome and appreciated
