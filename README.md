@@ -1,3 +1,6 @@
+PS: This is my absolute first time using github and trying to create an app that any user can use with no problems, so any feedback of any kind wether it's for the github page or the app itself is very welcome and appreciated. if you want direct and fast contact with me for some issue you found or advice you wanna give pm on discord (user: drafted_name) send a friend request if you can't pm me
+
+
 # MC Server GUI
 
 A standalone desktop application for managing Minecraft servers no command line, no VPS, no Docker. Java auto-downloaded on first launch. Packaged as a single Electron executable for Windows.
@@ -130,6 +133,3 @@ GNU General Public License v3.0 see [`LICENSE`](LICENSE).
 - **X:** [@drafted_name](https://x.com/drafted_name)
 - **Bugs & features:** [GitHub Issues](https://github.com/draftedname/mcservergui/issues)
 - **Sponsorships:** email above
-
-
-PS: This is my absolute first time using github and trying to create an app that any user can use with no problems, so any feedback of any kind wether it's for the github page or the app itself is very welcome and appreciated
