@@ -13,9 +13,7 @@ import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
 
 const router = Router();
 
-function p(params: any, key: string): string {
-  return String(params[key]);
-}
+import { p } from "../lib/params.js";
 
 interface FileEntry {
   name: string;
@@ -173,6 +171,44 @@ router.get("/:serverId/files/download", (req: Request, res: Response) => {
 
   const filename = path.basename(fullPath);
   res.download(fullPath, filename);
+});
+
+// Open file in system editor
+router.post("/:serverId/files/open", async (req: Request, res: Response) => {
+  const serverId = p(req.params, "serverId");
+  const { relpath } = req.body;
+
+  if (!relpath) {
+    res.status(400).json({ error: "relpath is required" });
+    return;
+  }
+
+  const server = loadServer(serverId);
+  if (!server) { res.status(404).json({ error: "Server not found" }); return; }
+
+  const serverDir = getServerDir(serverId);
+  let fullPath: string;
+  try {
+    fullPath = safeJoin(serverDir, relpath);
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    throw err;
+  }
+
+  if (!existsSync(fullPath)) {
+    res.status(404).json({ error: "File not found" });
+    return;
+  }
+
+  const { spawn } = await import("child_process");
+  const cmd = process.platform === "win32" ? "notepad.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+  const args = process.platform === "win32" ? [fullPath] : process.platform === "darwin" ? ["-a", "TextEdit", fullPath] : [fullPath];
+  spawn(cmd, args, { detached: true, stdio: "ignore" }).unref();
+
+  res.json({ success: true });
 });
 
 // Upload file

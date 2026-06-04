@@ -6,9 +6,7 @@ import { installModpack } from "../services/ModpackInstaller.js";
 
 const router = Router();
 
-function p(params: any, key: string): string {
-  return String(params[key]);
-}
+import { p } from "../lib/params.js";
 
 router.post("/:serverId/install-modpack", asyncHandler(async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");

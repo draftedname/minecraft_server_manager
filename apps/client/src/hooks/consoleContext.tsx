@@ -25,7 +25,6 @@ export function useConsoleContext() {
 
 export function ConsoleProvider({ children }: { children: ReactNode }) {
   const [lines, setLines] = useState<Record<string, ConsoleLine[]>>({});
-  const listenerAttached = useRef(false);
   const activeServers = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -43,11 +42,9 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
     };
 
     socket.on("console:output", handler);
-    listenerAttached.current = true;
 
     return () => {
       socket.off("console:output", handler);
-      listenerAttached.current = false;
     };
   }, []);
 

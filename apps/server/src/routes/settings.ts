@@ -5,9 +5,7 @@ import { loadServer, getServerDir } from "../services/DataStore.js";
 
 const router = Router();
 
-function p(params: any, key: string): string {
-  return String(params[key]);
-}
+import { p } from "../lib/params.js";
 
 const PROPERTY_DEFINITIONS: Record<string, { type: string; description: string; category: string; options?: string[] }> = {
   "allow-flight": { type: "boolean", description: "Allows users to use flight on your server", category: "server" },

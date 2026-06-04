@@ -103,7 +103,7 @@ export default function NewServer() {
       const { data } = await api.get("/versions/fabric/loader");
       return data;
     },
-    enabled: serverType === "fabric",
+    enabled: serverType === "fabric" || serverType === "modpack",
   });
 
   const { data: packResults, isLoading: packsLoading } = useQuery<{ hits: ModrinthProject[] }>({
@@ -138,6 +138,7 @@ export default function NewServer() {
       if (serverType === "modpack") {
         payload.modpackId = selectedPack?.project_id;
         payload.modpackVersionId = selectedVersionId;
+        if (loaderVersion) payload.loaderVersion = loaderVersion;
       }
       const { data } = await api.post("/servers", payload);
       return data;
@@ -263,6 +264,21 @@ export default function NewServer() {
 
             {serverType === "modpack" && (
               <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label>Fabric Loader Version</Label>
+                  <Select value={loaderVersion} onValueChange={setLoaderVersion} disabled={flLoading}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={flLoading ? "Loading..." : "Auto (latest stable)"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {fabricLoaderVersions?.map((v) => (
+                        <SelectItem key={v.version} value={v.version}>
+                          {v.version} {v.stable ? "" : "(unstable)"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 {!selectedPack ? (
                   <>
                     <div className="relative">

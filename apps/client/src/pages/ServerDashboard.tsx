@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -23,8 +23,10 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import NetworkCard from "@/components/NetworkCard";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { ServerConfig, ServerInfo } from "@mcservergui/shared";
 
 function statusBadge(status: string) {
@@ -88,6 +90,47 @@ export default function ServerDashboard() {
 
   const debouncedRamMutate = useDebouncedCallback(ramMutation.mutate, 500);
 
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [pendingLoader, setPendingLoader] = useState<string | null>(null);
+
+  const renameMutation = useMutation({
+    mutationFn: async (name: string) => {
+      await api.put(`/servers/${serverId}/name`, { name });
+    },
+    onSuccess: () => {
+      setEditingName(false);
+      queryClient.invalidateQueries({ queryKey: ["server", serverId] });
+      queryClient.invalidateQueries({ queryKey: ["servers"] });
+      toast({ title: "Server renamed" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to rename", description: err.response?.data?.error || err.message, variant: "destructive" });
+    },
+  });
+
+  const { data: loaderVersions } = useQuery<Array<{ version: string; stable: boolean }>>({
+    queryKey: ["versions", "fabric", "loader"],
+    queryFn: async () => {
+      const { data } = await api.get("/versions/fabric/loader");
+      return data;
+    },
+    enabled: !!serverId && (data?.config?.type === "fabric" || data?.config?.type === "modpack"),
+  });
+
+  const loaderMutation = useMutation({
+    mutationFn: async (loaderVersion: string) => {
+      await api.put(`/servers/${serverId}/loader`, { loaderVersion });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["server", serverId] });
+      toast({ title: "Loader version updated. Restart to apply." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to update loader", description: err.response?.data?.error || err.message, variant: "destructive" });
+    },
+  });
+
   const handleAction = async (action: string) => {
     try {
       await api.post(`/servers/${serverId}/${action}`);
@@ -116,11 +159,42 @@ export default function ServerDashboard() {
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{config.name}</h1>
+          {editingName ? (
+            <input
+              className="text-2xl font-bold bg-transparent border-b border-primary outline-none"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && nameInput.trim()) renameMutation.mutate(nameInput.trim());
+                if (e.key === "Escape") setEditingName(false);
+              }}
+              onBlur={() => setEditingName(false)}
+              autoFocus
+            />
+          ) : (
+            <h1
+              className="text-2xl font-bold cursor-pointer hover:text-primary transition-colors"
+              onClick={() => { setNameInput(config.name); setEditingName(true); }}
+              title="Click to rename"
+            >
+              {config.name}
+            </h1>
+          )}
           <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
             <span className="capitalize">{config.type === "modpack" ? "Modpack" : config.type}</span>
             <span>{config.gameVersion}</span>
-            {config.loaderVersion && <span>Loader {config.loaderVersion}</span>}
+            {(config.type === "fabric" || config.type === "modpack") && loaderVersions && (
+              <Select value={config.loaderVersion || ""} onValueChange={(v) => setPendingLoader(v)} disabled={loaderMutation.isPending}>
+                <SelectTrigger className="h-7 w-36 text-xs">
+                  <SelectValue placeholder="Loader" />
+                </SelectTrigger>
+                <SelectContent>
+                  {loaderVersions.map((v) => (
+                    <SelectItem key={v.version} value={v.version}>{v.version} {v.stable ? "" : "(unstable)"}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </div>
         <div className="flex gap-2">
@@ -280,6 +354,20 @@ export default function ServerDashboard() {
           </Link>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingLoader}
+        title="Change Loader Version"
+        description={`Change loader to ${pendingLoader}? This will re-download the Fabric loader and libraries.`}
+        confirmLabel="Change"
+        onConfirm={() => {
+          if (pendingLoader) {
+            loaderMutation.mutate(pendingLoader);
+            setPendingLoader(null);
+          }
+        }}
+        onCancel={() => setPendingLoader(null)}
+      />
     </div>
   );
 }

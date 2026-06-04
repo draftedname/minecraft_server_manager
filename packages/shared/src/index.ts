@@ -6,7 +6,6 @@ export interface ServerConfig {
   loaderVersion?: string;
   ram: number;
   javaPath: string;
-  autoStart: boolean;
   createdAt: string;
   lastStartedAt: string | null;
   backupConfig: BackupConfig;

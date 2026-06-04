@@ -12,6 +12,8 @@ import {
   Upload,
   Loader2,
   Globe,
+  Search,
+  Edit2,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -19,6 +21,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useChunkedUpload } from "@/hooks/useChunkedUpload";
 import { toast } from "@/components/ui/toaster";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { ServerInfo } from "@mcservergui/shared";
 import {
   Table,
@@ -52,6 +55,8 @@ export default function Files() {
   const { serverId } = useParams<{ serverId: string }>();
   const queryClient = useQueryClient();
   const [currentPath, setCurrentPath] = useState("");
+  const [fileSearch, setFileSearch] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<{ path: string; name: string; isDir: boolean } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploading, progress, error, upload } = useChunkedUpload();
 
@@ -107,11 +112,7 @@ export default function Files() {
   });
 
   const handleDelete = (entry: FileEntry) => {
-    const msg = entry.type === "directory"
-      ? `Delete directory "${entry.name}" and all its contents?`
-      : `Delete "${entry.name}"?`;
-    if (!window.confirm(msg)) return;
-    deleteMutation.mutate(entry.path);
+    setPendingDelete({ path: entry.path, name: entry.name, isDir: entry.type === "directory" });
   };
 
   const handleDownload = (entry: FileEntry) => {
@@ -121,6 +122,18 @@ export default function Files() {
   const navigateTo = (dir: FileEntry) => {
     setCurrentPath(dir.path);
   };
+
+  const handleEdit = async (entry: FileEntry) => {
+    try {
+      await api.post(`/servers/${serverId}/files/open`, { relpath: entry.path });
+    } catch (err: any) {
+      toast({ title: "Failed to open file", description: err.response?.data?.error || err.message, variant: "destructive" });
+    }
+  };
+
+  const filteredFiles = fileSearch
+    ? (files || []).filter((f) => f.name.toLowerCase().includes(fileSearch.toLowerCase()))
+    : (files || []);
 
   const breadcrumbs = currentPath ? currentPath.split("\\").filter(Boolean) : [];
 
@@ -185,6 +198,16 @@ export default function Files() {
             <p className="text-xs text-destructive">{error}</p>
           </div>
         )}
+        <div className="mb-3 relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            className="w-full rounded-md border border-border bg-transparent py-2 pl-9 pr-3 text-sm outline-none focus:border-primary"
+            placeholder="Filter files..."
+            value={fileSearch}
+            onChange={(e) => setFileSearch(e.target.value)}
+          />
+        </div>
+
         <div className="mb-4 flex items-center gap-1 text-sm">
           <Button
             variant="ghost"
@@ -215,7 +238,7 @@ export default function Files() {
 
         {isLoading ? (
           <p className="text-muted-foreground">Loading...</p>
-        ) : !files || files.length === 0 ? (
+        ) : !filteredFiles || filteredFiles.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
               <Folder className="h-8 w-8" />
@@ -235,7 +258,7 @@ export default function Files() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {files.map((entry) => (
+                  {filteredFiles.map((entry) => (
                     <TableRow key={entry.path}>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -286,6 +309,16 @@ export default function Files() {
                               <Download className="h-4 w-4" />
                             </Button>
                           )}
+                          {entry.type === "file" && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleEdit(entry)}
+                              title="Open in editor"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                          )}
                           <span title={isRunning ? "Stop the server first" : ""}>
                             <Button
                               size="icon"
@@ -308,6 +341,22 @@ export default function Files() {
           </Card>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="Delete"
+        description={pendingDelete?.isDir
+          ? `Delete directory "${pendingDelete?.name}" and all its contents?`
+          : `Delete "${pendingDelete?.name}"?`}
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (pendingDelete) {
+            deleteMutation.mutate(pendingDelete.path);
+            setPendingDelete(null);
+          }
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

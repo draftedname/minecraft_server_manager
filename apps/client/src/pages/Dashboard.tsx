@@ -6,38 +6,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
-import type { ServerConfig, ServerInfo } from "@mcservergui/shared";
-import { useState, useEffect } from "react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import type { ServerInfo } from "@mcservergui/shared";
+import { useState } from "react";
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [statuses, setStatuses] = useState<Record<string, ServerInfo>>({});
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
 
-  const { data: servers, isLoading } = useQuery<ServerConfig[]>({
-    queryKey: ["servers"],
+  const { data: servers, isLoading } = useQuery<ServerInfo[]>({
+    queryKey: ["servers", "status"],
     queryFn: async () => {
-      const { data } = await api.get("/servers");
+      const { data } = await api.get("/servers", { params: { status: "true" } });
       return data;
     },
+    refetchInterval: 3000,
   });
-
-  useEffect(() => {
-    if (!servers) return;
-    const interval = setInterval(async () => {
-      const results: Record<string, ServerInfo> = {};
-      for (const s of servers) {
-        try {
-          const { data } = await api.get(`/servers/${s.id}`);
-          results[s.id] = data;
-        } catch {
-          // server might be deleted
-        }
-      }
-      setStatuses(results);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [servers]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -45,6 +30,7 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["servers"] });
+      queryClient.invalidateQueries({ queryKey: ["servers", "status"] });
       toast({ title: "Server deleted" });
     },
     onError: () => {
@@ -58,6 +44,7 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["servers"] });
+      queryClient.invalidateQueries({ queryKey: ["servers", "status"] });
     },
     onError: () => {
       toast({ title: "Action failed", variant: "destructive" });
@@ -116,37 +103,36 @@ export default function Dashboard() {
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {servers.map((server) => {
-          const info = statuses[server.id];
-          const status = info?.status || "stopped";
+          const status = server.status || "stopped";
 
           return (
             <Card
-              key={server.id}
+              key={server.config.id}
               className="cursor-pointer transition-colors hover:bg-card/60"
-              onClick={() => navigate(`/${server.id}/console`)}
+              onClick={() => navigate(`/${server.config.id}/console`)}
             >
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-base">{server.name}</CardTitle>
+                <CardTitle className="text-base">{server.config.name}</CardTitle>
                 {statusBadge(status)}
               </CardHeader>
               <CardContent>
                 <div className="space-y-1 text-sm text-muted-foreground">
                   <div className="flex justify-between">
                     <span>Type:</span>
-                    <span className="capitalize">{server.type === "modpack" ? "Modpack" : server.type}</span>
+                    <span className="capitalize">{server.config.type === "modpack" ? "Modpack" : server.config.type}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Version:</span>
-                    <span>{server.gameVersion}</span>
+                    <span>{server.config.gameVersion}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>RAM:</span>
-                    <span>{server.ram} MB</span>
+                    <span>{server.config.ram} MB</span>
                   </div>
-                  {info && info.status === "running" && (
+                  {server.status === "running" && (
                     <div className="flex justify-between">
                       <span>Uptime:</span>
-                      <span>{formatUptime(info.uptime)}</span>
+                      <span>{formatUptime(server.uptime)}</span>
                     </div>
                   )}
                 </div>
@@ -157,7 +143,7 @@ export default function Dashboard() {
                       className="w-full"
                       onClick={(e) => {
                         e.stopPropagation();
-                        actionMutation.mutate({ id: server.id, action: "start" });
+                        actionMutation.mutate({ id: server.config.id, action: "start" });
                       }}
                     >
                       <Play className="h-3 w-3" />
@@ -171,7 +157,7 @@ export default function Dashboard() {
                         className="flex-1"
                         onClick={(e) => {
                           e.stopPropagation();
-                          actionMutation.mutate({ id: server.id, action: "stop" });
+                          actionMutation.mutate({ id: server.config.id, action: "stop" });
                         }}
                       >
                         <Square className="h-3 w-3" />
@@ -183,7 +169,7 @@ export default function Dashboard() {
                         className="flex-1"
                         onClick={(e) => {
                           e.stopPropagation();
-                          actionMutation.mutate({ id: server.id, action: "restart" });
+                          actionMutation.mutate({ id: server.config.id, action: "restart" });
                         }}
                       >
                         <RefreshCw className="h-3 w-3" />
@@ -202,7 +188,7 @@ export default function Dashboard() {
                     className="text-destructive hover:text-destructive"
                     onClick={(e) => {
                       e.stopPropagation();
-                      deleteMutation.mutate(server.id);
+                      setPendingDelete({ id: server.config.id, name: server.config.name });
                     }}
                   >
                     <Trash2 className="h-3 w-3" />
@@ -213,6 +199,20 @@ export default function Dashboard() {
           );
         })}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="Delete Server"
+        description={`Delete "${pendingDelete?.name}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (pendingDelete) {
+            deleteMutation.mutate(pendingDelete.id);
+            setPendingDelete(null);
+          }
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

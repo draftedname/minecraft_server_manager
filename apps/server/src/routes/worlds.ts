@@ -15,9 +15,7 @@ import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 const router = Router();
 
-function p(params: any, key: string): string {
-  return String(params[key]);
-}
+import { p } from "../lib/params.js";
 
 router.get("/:serverId/worlds", asyncHandler(async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
@@ -278,7 +276,13 @@ router.post("/:serverId/worlds/import", asyncHandler(async (req: Request, res: R
   }
 }));
 
+const sizeCache = new Map<string, { size: number; timestamp: number }>();
+const SIZE_CACHE_TTL = 30000; // 30 seconds
+
 async function getDirSizeAsync(dir: string): Promise<number> {
+  const cached = sizeCache.get(dir);
+  if (cached && Date.now() - cached.timestamp < SIZE_CACHE_TTL) return cached.size;
+
   let size = 0;
   const names = await readdir(dir, { withFileTypes: true });
   for (const entry of names) {
@@ -292,6 +296,8 @@ async function getDirSizeAsync(dir: string): Promise<number> {
       } catch {}
     }
   }
+
+  sizeCache.set(dir, { size, timestamp: Date.now() });
   return size;
 }
 

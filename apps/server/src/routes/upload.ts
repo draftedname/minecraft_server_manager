@@ -9,9 +9,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 
-function p(params: any, key: string): string {
-  return String(params[key]);
-}
+import { p } from "../lib/params.js";
 
 interface UploadSession {
   filename: string;
@@ -109,7 +107,7 @@ router.post("/upload/init", (req: Request, res: Response) => {
   }
 
   uploadSessions.set(uploadId, {
-    filename,
+    filename: filename.replace(/[^a-zA-Z0-9._-]/g, "_").substring(0, 255),
     totalChunks,
     receivedChunks: new Set(),
   });

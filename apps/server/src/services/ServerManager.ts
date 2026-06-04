@@ -154,6 +154,7 @@ export async function startServer(id: string): Promise<{ success: boolean; error
       const args = [
         `-Xmx${ramMB}M`,
         `-Xms${Math.floor(ramMB / 2)}M`,
+        "-Dfabric.remapMods=true",
         "-cp",
         cp,
         profile.mainClass,
@@ -174,6 +175,7 @@ export async function startServer(id: string): Promise<{ success: boolean; error
       const proc = spawn(javaPath, [
         `-Xmx${ramMB}M`,
         `-Xms${Math.floor(ramMB / 2)}M`,
+        "-Dfabric.remapMods=true",
         "-jar",
         "fabric-server-launch.jar",
         "nogui",
@@ -226,7 +228,6 @@ function handleProcess(id: string, config: import("@mcservergui/shared").ServerC
   runningServers.set(id, running);
 
   const io = getIO();
-  const logPath = path.join(serverDir, "logs", "latest.log");
 
   proc.stdout?.on("data", (data: Buffer) => {
     const lines = data.toString().split("\n").filter(Boolean);

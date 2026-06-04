@@ -9,6 +9,10 @@ interface ModpackManifestFile {
   path: string;
   downloads: string[];
   fileSize: number;
+  env?: {
+    client?: string;
+    server?: string;
+  };
 }
 
 interface ModpackManifest {
@@ -21,6 +25,7 @@ interface ModpackManifest {
 }
 
 export interface ModpackResult {
+  name: string;
   gameVersion: string;
   loader: string;
   loaderVersion?: string;
@@ -29,10 +34,41 @@ export interface ModpackResult {
 
 export type ProgressEmit = (msg: string, current: number, total: number) => void;
 
+async function resolveLoaderVersion(gameVersion: string, rawVersion: string | undefined): Promise<string | undefined> {
+  if (!rawVersion) return undefined;
+  // Check if it contains range specifiers (>, <, =, ^, ~, *, comma)
+  if (!/[><=^*~,]/.test(rawVersion) && /^\d/.test(rawVersion)) return rawVersion;
+
+  try {
+    const url = `https://meta.fabricmc.net/v2/versions/loader`;
+    const response = await fetch(url);
+    if (!response.ok) return rawVersion;
+    const data = (await response.json()) as Array<{ loader: { version: string; stable: boolean } }>;
+
+    const stable = data
+      .filter((v) => v.loader.stable)
+      .map((v) => v.loader.version)
+      .sort((a, b) => {
+        const pa = a.split(".").map(Number);
+        const pb = b.split(".").map(Number);
+        for (let i = 0; i < 3; i++) {
+          if ((pa[i] || 0) !== (pb[i] || 0)) return (pb[i] || 0) - (pa[i] || 0);
+        }
+        return 0;
+      });
+
+    if (stable.length > 0) return stable[0];
+    return "0.16.10";
+  } catch {}
+
+  return rawVersion;
+}
+
 export async function installModpack(
   serverDir: string,
   versionId: string,
-  emit?: ProgressEmit
+  emit?: ProgressEmit,
+  preferredLoaderVersion?: string
 ): Promise<ModpackResult> {
   const version = await getVersion(versionId);
   const mrpackFile = version?.files?.find((f: any) => f.filename?.endsWith(".mrpack"));
@@ -56,9 +92,10 @@ export async function installModpack(
   const manifestRaw = readFileSync(manifestPath, "utf-8");
   const manifest: ModpackManifest = JSON.parse(manifestRaw);
 
-  const gameVersion = (manifest.dependencies?.minecraft || manifest.versionId).replace(/^v/, "");
+  const gameVersion = (version.game_versions?.[0] || manifest.dependencies?.minecraft || "").replace(/^v/, "");
   const loader = manifest.dependencies?.["fabric-loader"] ? "fabric" : "vanilla";
-  const loaderVersion = manifest.dependencies?.["fabric-loader"];
+  const loaderVersion = preferredLoaderVersion
+    || await resolveLoaderVersion(gameVersion, manifest.dependencies?.["fabric-loader"]);
 
   console.log(`Modpack: ${manifest.name}, MC ${gameVersion}, loader: ${loader} ${loaderVersion || ""}`);
 
@@ -80,6 +117,25 @@ export async function installModpack(
     const file = files[i];
     emit?.(`Downloading mods (${i + 1}/${files.length})...`, i + 1, files.length + 2);
     if (!file.downloads?.[0]) continue;
+
+    if (file.env && file.env.server !== "required") {
+      console.log(`  Skipped: ${file.path} (env server: ${file.env.server || "none"})`);
+      continue;
+    }
+
+    // Skip client-only paths regardless of env (some modpack authors mislabel)
+    const lowerPath = file.path.toLowerCase();
+    if (
+      lowerPath.startsWith("resourcepacks/") ||
+      lowerPath.startsWith("shaderpacks/") ||
+      lowerPath.startsWith("shaders/") ||
+      lowerPath.startsWith("kubejs/assets/")
+    ) {
+      console.log(`  Skipped (client path): ${file.path}`);
+      continue;
+    }
+
+    console.log(`  Installing: ${file.path} (env server: ${file.env?.server || "none"})`);
 
     let filePath: string;
     try {
@@ -112,5 +168,5 @@ export async function installModpack(
 
   emit?.("Complete!", 1, 1);
 
-  return { gameVersion, loader, loaderVersion, modResults };
+  return { name: manifest.name, gameVersion, loader, loaderVersion, modResults };
 }

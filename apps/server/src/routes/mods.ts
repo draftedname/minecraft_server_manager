@@ -15,9 +15,7 @@ import type { ModInfo } from "@mcservergui/shared";
 
 const router = Router();
 
-function p(params: any, key: string): string {
-  return String(params[key]);
-}
+import { p } from "../lib/params.js";
 
 router.get("/:serverId/mods", (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
@@ -180,7 +178,17 @@ router.post("/:serverId/mods/update-all", asyncHandler(async (req: Request, res:
       const file = latest.files?.[0];
       if (!file?.url) continue;
 
-      // Remove old mod file
+      // Download new version first
+      let dest: string;
+      try {
+        dest = safeJoin(modsDir, file.filename);
+      } catch {
+        results.push({ filename, success: false, error: "Invalid mod filename from API" });
+        continue;
+      }
+      await downloadModFile(file.url, dest);
+
+      // Remove old mod file after successful download
       let oldPath: string;
       try {
         oldPath = safeJoin(modsDir, filename);
@@ -189,16 +197,6 @@ router.post("/:serverId/mods/update-all", asyncHandler(async (req: Request, res:
         continue;
       }
       if (existsSync(oldPath)) unlinkSync(oldPath);
-
-      // Download new version
-      let dest: string;
-      try {
-        dest = safeJoin(modsDir, file.filename);
-      } catch {
-        results.push({ filename, success: false, error: "Invalid mod filename from API" });
-        continue;
-      }
-    await downloadModFile(file.url, dest);
 
       // Update metadata
       saveModMeta(serverId, file.filename, {

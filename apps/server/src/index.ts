@@ -43,7 +43,7 @@ const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: "*",
+    origin: /^https?:\/\/localhost(:\d+)?$/,
     methods: ["GET", "POST"],
   },
 });

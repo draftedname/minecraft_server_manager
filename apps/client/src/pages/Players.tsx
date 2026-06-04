@@ -295,13 +295,74 @@ export default function Players() {
           </TabsContent>
 
           <TabsContent value="bans">
-            <Card>
-              <CardContent className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
-                <Ban className="h-8 w-8" />
-                <p>Ban management coming soon</p>
-                <p className="text-xs">Use the Ban button on online players above, or commands in the console</p>
-              </CardContent>
-            </Card>
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Banned Players</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!data?.bannedPlayers?.length ? (
+                    <p className="text-sm text-muted-foreground">No banned players</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>UUID</TableHead>
+                          <TableHead className="w-16"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {data.bannedPlayers.map((p) => (
+                          <TableRow key={p.uuid || p.name}>
+                            <TableCell>{p.name}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground font-mono">{p.uuid}</TableCell>
+                            <TableCell>
+                              <Button size="icon" variant="ghost" onClick={() => actionMutation.mutate({ name: p.name, action: "unban" })} disabled={actionMutation.isPending} title="Unban">
+                                <UserX className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Banned IPs</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!data?.bannedIps?.length ? (
+                    <p className="text-sm text-muted-foreground">No banned IPs</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>IP</TableHead>
+                          <TableHead>UUID</TableHead>
+                          <TableHead className="w-16"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {data.bannedIps.map((p) => (
+                          <TableRow key={p.name}>
+                            <TableCell className="font-mono">{p.name}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground font-mono">{p.uuid}</TableCell>
+                            <TableCell>
+                              <Button size="icon" variant="ghost" onClick={() => actionMutation.mutate({ name: p.name, action: "unban-ip" })} disabled={actionMutation.isPending} title="Unban IP">
+                                <UserX className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

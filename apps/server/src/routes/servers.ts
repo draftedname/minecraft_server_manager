@@ -2,13 +2,12 @@ import { Router, Request, Response } from "express";
 import path from "path";
 import { existsSync, mkdirSync, rmSync, readFileSync } from "fs";
 import { v4 as uuid } from "uuid";
-import { loadServers, addServer, removeServer, loadServer, ensureServerDir, saveServers, updateServer } from "../services/DataStore.js";
-import { startServer, stopServer, restartServer, sendCommand, getServerInfo, getAllRunning, getRunningServer } from "../services/ServerManager.js";
+import { loadServers, addServer, removeServer, loadServer, ensureServerDir, saveServers, updateServer, getServerDir } from "../services/DataStore.js";
+import { startServer, stopServer, restartServer, sendCommand, getServerInfo, getRunningServer } from "../services/ServerManager.js";
 import { downloadVanillaJar, downloadFabricJar } from "../services/ServerJarDownloader.js";
 import { checkJava } from "../services/JavaManager.js";
 import { SERVERS_DIR } from "../services/config.js";
 import { getIO } from "../websocket/index.js";
-import { copyDirAsync } from "../services/FileUtils.js";
 import { readLastLines } from "../services/readLastLines.js";
 import { installModpack } from "../services/ModpackInstaller.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
@@ -16,14 +15,16 @@ import type { ServerConfig, CreateServerRequest } from "@mcservergui/shared";
 
 const router = Router();
 
-function p(params: any, key: string): string {
-  return String(params[key]);
-}
+import { p } from "../lib/params.js";
 
 // List all servers
-router.get("/", (_req: Request, res: Response) => {
+router.get("/", (req: Request, res: Response) => {
   const valid = loadServers();
-  res.json(valid);
+  if (req.query.status === "true") {
+    res.json(valid.map((c) => getServerInfo(c.id)).filter(Boolean));
+  } else {
+    res.json(valid);
+  }
 });
 
 // Create server
@@ -69,7 +70,6 @@ router.post("/", asyncHandler(async (req: Request, res: Response) => {
     loaderVersion: body.loaderVersion,
     ram: body.ram || 2048,
     javaPath: javaInfo.path || "java",
-    autoStart: false,
     createdAt: new Date().toISOString(),
     lastStartedAt: null,
     modpackId: body.modpackId,
@@ -87,9 +87,9 @@ router.post("/", asyncHandler(async (req: Request, res: Response) => {
 
   try {
     if (body.type === "vanilla") {
-      await downloadVanillaJar(id, body.gameVersion!);
+      await downloadVanillaJar(getServerDir(id), body.gameVersion!);
     } else if (body.type === "fabric") {
-      await downloadFabricJar(id, body.gameVersion!, body.loaderVersion!);
+      await downloadFabricJar(getServerDir(id), body.gameVersion!, body.loaderVersion!);
     } else if (body.type === "modpack") {
       const { getVersion, downloadModFile } = await import("../services/ModrinthClient.js");
       const io = getIO();
@@ -99,9 +99,12 @@ router.post("/", asyncHandler(async (req: Request, res: Response) => {
 
       emit("Fetching modpack info...", 0, 1);
 
-      const result = await installModpack(dir, String(body.modpackVersionId), emit);
+      const result = await installModpack(dir, String(body.modpackVersionId), emit, body.loaderVersion || undefined);
       config.gameVersion = result.gameVersion;
-      config.loaderVersion = result.loaderVersion;
+      config.loaderVersion = result.loaderVersion || config.loaderVersion;
+      if (result.name && result.gameVersion) {
+        config.name = `${result.name} - ${result.gameVersion}`;
+      }
     }
 
     await addServer(config);
@@ -207,6 +210,44 @@ router.get("/:id/console-history", (req: Request, res: Response) => {
   const lines = readLastLines(logPath, 1000);
   res.json({ lines });
 });
+
+// Rename server
+router.put("/:id/name", asyncHandler(async (req: Request, res: Response) => {
+  const id = p(req.params, "id");
+  const { name } = req.body;
+  if (!name || typeof name !== "string") {
+    res.status(400).json({ error: "name is required" });
+    return;
+  }
+  const updated = await updateServer(id, { name });
+  if (!updated) {
+    res.status(404).json({ error: "Server not found" });
+    return;
+  }
+  res.json({ success: true, name });
+}));
+
+// Update loader version (re-downloads fabric loader and libraries)
+router.put("/:id/loader", asyncHandler(async (req: Request, res: Response) => {
+  const id = p(req.params, "id");
+  const { loaderVersion } = req.body;
+  if (!loaderVersion) {
+    res.status(400).json({ error: "loaderVersion is required" });
+    return;
+  }
+  const config = loadServer(id);
+  if (!config) {
+    res.status(404).json({ error: "Server not found" });
+    return;
+  }
+  if (getRunningServer(id)) {
+    res.status(400).json({ error: "Server must be stopped to change the loader version" });
+    return;
+  }
+  await downloadFabricJar(getServerDir(id), config.gameVersion, loaderVersion);
+  const updated = await updateServer(id, { loaderVersion });
+  res.json({ success: true, loaderVersion });
+}));
 
 // Update server RAM allocation
 router.put("/:id/ram", asyncHandler(async (req: Request, res: Response) => {

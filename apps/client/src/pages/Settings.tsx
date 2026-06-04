@@ -36,7 +36,6 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [localProps, setLocalProps] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
-  const dirtyRef = useRef(false);
   const initialLoadDone = useRef(false);
 
   const { data, isLoading } = useQuery<{

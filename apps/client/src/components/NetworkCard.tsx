@@ -8,7 +8,6 @@ import {
   ExternalLink,
   Wifi,
   WifiOff,
-  AlertTriangle,
   CheckCircle,
 } from "lucide-react";
 import api from "@/lib/api";
@@ -25,7 +24,6 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/components/ui/toaster";
 

@@ -11,6 +11,7 @@ import {
   Settings,
   Plus,
   Server,
+  Home,
 } from "lucide-react";
 import api from "@/lib/api";
 import type { ServerConfig } from "@mcservergui/shared";
@@ -75,6 +76,16 @@ export default function Sidebar() {
           </select>
         </div>
       )}
+
+      <div className="border-t border-sidebar-border p-2">
+        <NavLink
+          to="/"
+          className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+        >
+          <Home className="h-4 w-4" />
+          Home
+        </NavLink>
+      </div>
 
       <nav className="flex flex-1 flex-col gap-1 p-2">
         {navItems.map((item) => {

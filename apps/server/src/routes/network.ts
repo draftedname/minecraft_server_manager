@@ -8,9 +8,7 @@ import { asyncHandler } from "../lib/asyncHandler.js";
 
 const router = Router();
 
-function p(params: any, key: string): string {
-  return String(params[key]);
-}
+import { p } from "../lib/params.js";
 
 router.get("/:serverId/network", (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");

@@ -1,6 +1,5 @@
 import { writeFileSync, existsSync, mkdirSync } from "fs";
 import path from "path";
-import { getServerDir } from "./DataStore.js";
 
 const VANILLA_MANIFEST = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
 const FABRIC_META = "https://meta.fabricmc.net/v2/versions";
@@ -20,8 +19,7 @@ async function downloadFile(url: string, dest: string): Promise<void> {
   writeFileSync(dest, buffer);
 }
 
-export async function downloadVanillaJar(serverId: string, gameVersion: string): Promise<string> {
-  const serverDir = getServerDir(serverId);
+export async function downloadVanillaJar(serverDir: string, gameVersion: string): Promise<string> {
   const jarPath = path.join(serverDir, "server.jar");
 
   const manifest = await fetchJson(VANILLA_MANIFEST);
@@ -37,16 +35,15 @@ export async function downloadVanillaJar(serverId: string, gameVersion: string):
 }
 
 export async function downloadFabricJar(
-  serverId: string,
+  serverDir: string,
   gameVersion: string,
   loaderVersion: string
 ): Promise<{ launchJar: string; classpath: string; mainClass: string }> {
-  const serverDir = getServerDir(serverId);
 
   // 1. Download vanilla server jar
   const vanillaJar = path.join(serverDir, "server.jar");
   if (!existsSync(vanillaJar)) {
-    await downloadVanillaJar(serverId, gameVersion);
+    await downloadVanillaJar(serverDir, gameVersion);
   }
 
   // 2. Get Fabric loader profile (lists all libraries + main class)

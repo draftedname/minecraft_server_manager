@@ -28,9 +28,7 @@ import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
 
 const router = Router();
 
-function p(params: any, key: string): string {
-  return String(params[key]);
-}
+import { p } from "../lib/params.js";
 
 // Get Drive status
 router.get("/drive/status", (_req: Request, res: Response) => {

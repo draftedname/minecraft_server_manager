@@ -91,12 +91,19 @@ export default function Mods() {
   const { serverId } = useParams<{ serverId: string }>();
   const queryClient = useQueryClient();
 
+  const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [serverSideOnly, setServerSideOnly] = useState(true);
   const [sort, setSort] = useState("downloads");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [page, setPage] = useState(0);
+  const [modSearch, setModSearch] = useState("");
   const PAGE_SIZE = 20;
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchQuery(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   // Version selection state
   const [versionDialogOpen, setVersionDialogOpen] = useState(false);
@@ -339,6 +346,15 @@ export default function Mods() {
               </Card>
             ) : (
               <div className="space-y-2">
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    className="w-full rounded-md border border-border bg-transparent py-2 pl-9 pr-3 text-sm outline-none focus:border-primary"
+                    placeholder="Filter installed mods..."
+                    value={modSearch}
+                    onChange={(e) => setModSearch(e.target.value)}
+                  />
+                </div>
                 {(mods.length > 0) && (
                   <div className="flex gap-2 mb-2">
                     <span title={isRunning ? "Stop the server first" : ""}>
@@ -373,7 +389,9 @@ export default function Mods() {
                     </span>
                   </div>
                 )}
-                {mods.map((mod) => {
+                {mods
+                  .filter((m) => !modSearch || (m.name || m.filename).toLowerCase().includes(modSearch.toLowerCase()))
+                  .map((mod) => {
                   const updateInfo = updatesMap[mod.filename];
                   return (
                   <Card key={mod.filename}>
@@ -454,8 +472,8 @@ export default function Mods() {
                 <Input
                   placeholder="Search or browse mods..."
                   className="pl-9"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                 />
               </div>
 
@@ -604,7 +622,7 @@ export default function Mods() {
       </div>
 
       <Dialog open={versionDialogOpen} onOpenChange={setVersionDialogOpen}>
-        <DialogContent className="max-w-md overflow-hidden">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="truncate pr-6">Install {selectedProject?.title}</DialogTitle>
           </DialogHeader>
