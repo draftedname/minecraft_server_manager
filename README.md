@@ -19,7 +19,7 @@ A standalone desktop application for managing Minecraft servers no command line,
 
 [**Download Latest Installer**](https://github.com/draftedname/mcservergui/releases/latest)
 
-1. Download `MC Server GUI Setup 1.0.0.exe` from the link above
+1. Download `MC Server GUI Setup x.x.x.exe` from the link above
 2. Run the installer (default settings are fine)
 3. Launch from the desktop shortcut or Start Menu
 
@@ -64,8 +64,8 @@ me and some ai :3 (all bugs and tests and security stuff are handled by me)
 ### Setup
 
 ```
-git clone https://github.com/draftedname/mcservergui.git
-cd mcservergui
+git clone https://github.com/draftedname/minecraft_server_manager.git
+cd minecraft_server_manager
 pnpm install
 ```
 
@@ -93,7 +93,7 @@ pnpm build
 npx electron-builder --win
 ```
 
-Output: `dist-electron/MC Server GUI Setup 1.0.0.exe`
+Output: `dist-electron/MC Server GUI Setup x.x.x.exe`
 
 ### Environment Variables
 
@@ -101,6 +101,25 @@ Output: `dist-electron/MC Server GUI Setup 1.0.0.exe`
 |----------|---------|---------|
 | `MCSERVERGUI_WEB_PORT` | Web UI port | `8080` |
 | `MCSERVERGUI_DATA_DIR` | Override data directory | OS sandbox |
+
+## ⚠️ Known Issues
+
+**Modpacks are currently in a broken state.** The mod filtering system may install client-only mods or skip server-required mods. Some modpacks may not work at all. This is being actively worked on — expect improvements in future updates.
+
+---
+
+## Features
+
+- **Modpack installer** with 3-layer filtering (Modrinth API, blacklist, JAR inspection) to skip client-only mods
+- **Log analysis** via mclo.gs — detects crashes, mod conflicts, and common problems
+- **Modrinth browser** — search and install mods directly from the app
+- **Fabric loader version selection** for modpacks and Fabric servers
+- **World management** — import, backup (local + Google Drive), restore, activate, and delete
+- **Console** with color-coded output, filtering, search, and mclo.gs analysis
+- **File browser** with text editor integration
+- **Playit.gg tunneling** for public access without port forwarding
+- **Auto-Java download** if not found on the system
+- **RAM allocation** with instant apply
 
 ---
 
