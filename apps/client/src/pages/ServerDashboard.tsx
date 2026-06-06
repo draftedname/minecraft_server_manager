@@ -22,11 +22,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
-import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import NetworkCard from "@/components/NetworkCard";
-import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { ServerConfig, ServerInfo } from "@mcservergui/shared";
 
@@ -79,12 +78,21 @@ export default function ServerDashboard() {
     if (!serverId) return;
     const socket = getSocket();
     if (!socket.connected) socket.connect();
-    const handler = () => {
-      queryClient.invalidateQueries({ queryKey: ["server", serverId] });
+    const handler = (data: { serverId: string }) => {
+      if (data.serverId === serverId) {
+        queryClient.invalidateQueries({ queryKey: ["server", serverId] });
+      }
     };
     socket.on("server:status", handler);
     return () => { socket.off("server:status", handler); };
   }, [serverId, queryClient]);
+
+  useEffect(() => {
+    if (data?.status === "running") {
+      const id = setInterval(() => setTick((t) => t + 1), 1000);
+      return () => clearInterval(id);
+    }
+  }, [data?.status]);
 
   const ramMutation = useMutation({
     mutationFn: async (ram: number) => {
@@ -99,11 +107,13 @@ export default function ServerDashboard() {
     },
   });
 
-  const debouncedRamMutate = useDebouncedCallback(ramMutation.mutate, 500);
-
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [pendingLoader, setPendingLoader] = useState<string | null>(null);
+  const [editingRam, setEditingRam] = useState(false);
+  const [ramInput, setRamInput] = useState(0);
+  const [eulaOpen, setEulaOpen] = useState(false);
+  const [tick, setTick] = useState(0);
 
   const renameMutation = useMutation({
     mutationFn: async (name: string) => {
@@ -147,11 +157,12 @@ export default function ServerDashboard() {
       await api.post(`/servers/${serverId}/${action}`);
       refetch();
     } catch (err: any) {
-      toast({
-        title: "Action failed",
-        description: err.response?.data?.error || err.message,
-        variant: "destructive",
-      });
+      const error = err.response?.data?.error || err.message;
+      if (error === "EULA_NOT_ACCEPTED") {
+        setEulaOpen(true);
+        return;
+      }
+      toast({ title: "Action failed", description: error, variant: "destructive" });
     }
   };
 
@@ -165,6 +176,9 @@ export default function ServerDashboard() {
 
   const { config, status, uptime } = data;
   const isRunning = status === "running";
+  const localUptime = isRunning && config.lastStartedAt
+    ? Date.now() - new Date(config.lastStartedAt).getTime()
+    : uptime;
 
   return (
     <div className="p-6">
@@ -251,7 +265,7 @@ export default function ServerDashboard() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{isRunning ? formatUptime(uptime) : "--"}</div>
+            <div className="text-2xl font-bold">{isRunning ? formatUptime(localUptime) : "--"}</div>
           </CardContent>
         </Card>
 
@@ -293,21 +307,50 @@ export default function ServerDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <Slider
-              value={[config.ram]}
-              onValueChange={([v]) => {
-                if (!isRunning) debouncedRamMutate(v);
-              }}
-              min={512}
-              max={32768}
-              step={128}
-              disabled={isRunning}
-              className={isRunning ? "opacity-50 cursor-not-allowed" : ""}
-            />
-            <div className="mt-1 flex justify-between text-xs text-muted-foreground">
-              <span>512 MB</span>
-              <span>32 GB</span>
-            </div>
+            {editingRam ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  value={ramInput}
+                  onChange={(e) => setRamInput(parseInt(e.target.value, 10) || 0)}
+                  min={512}
+                  max={32768}
+                  step={128}
+                  className="w-32"
+                />
+                <span className="text-sm text-muted-foreground">MB</span>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const v = Math.max(512, Math.min(32768, ramInput));
+                    setRamInput(v);
+                    ramMutation.mutate(v, {
+                      onSuccess: () => setEditingRam(false),
+                      onError: () => setEditingRam(false),
+                    });
+                  }}
+                  disabled={ramMutation.isPending || ramInput < 512 || ramInput > 32768}
+                >
+                  Save
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setEditingRam(false)}>Cancel</Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-2xl font-bold">{config.ram} MB</span>
+                <span className="text-xs text-muted-foreground">
+                  ({(config.ram / 1024).toFixed(1)} GB)
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setRamInput(config.ram); setEditingRam(true); }}
+                  disabled={isRunning}
+                >
+                  Change
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -365,6 +408,19 @@ export default function ServerDashboard() {
           </Link>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={eulaOpen}
+        title="Minecraft EULA"
+        description="By starting this server, you accept the Minecraft End User License Agreement (EULA). Read it at https://aka.ms/MinecraftEULA."
+        confirmLabel="Accept & Start"
+        onConfirm={async () => {
+          await api.post(`/servers/${serverId}/eula/accept`);
+          setEulaOpen(false);
+          handleAction("start");
+        }}
+        onCancel={() => setEulaOpen(false)}
+      />
 
       <ConfirmDialog
         open={!!pendingLoader}

@@ -1,4 +1,4 @@
-import { ChildProcess, spawn, execSync } from "child_process";
+import { ChildProcess, spawn, spawnSync } from "child_process";
 import path from "path";
 import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync } from "fs";
 import { loadServer, loadServers, updateServer, getServerDir, ensureServerDir } from "./DataStore.js";
@@ -29,7 +29,7 @@ const onlinePlayers = new Map<string, Set<string>>();
 
 function killProcess(proc: ChildProcess): void {
   if (process.platform === "win32") {
-    try { execSync(`taskkill /F /T /PID ${proc.pid} 2>nul`, { stdio: "ignore" }); } catch {}
+    try { spawnSync("taskkill", ["/F", "/T", "/PID", String(proc.pid)], { stdio: "ignore", windowsHide: true }); } catch {}
   } else {
     try { proc.kill("SIGKILL"); } catch {}
   }
@@ -100,7 +100,7 @@ export async function startServer(id: string): Promise<{ success: boolean; error
 
   const eulaPath = path.join(serverDir, "eula.txt");
   if (!existsSync(eulaPath) || !readFileSync(eulaPath, "utf-8").includes("eula=true")) {
-    writeFileSync(eulaPath, "eula=true", "utf-8");
+    return { success: false, error: "EULA_NOT_ACCEPTED" };
   }
 
   // Auto-download Java if not installed
@@ -240,7 +240,7 @@ function handleProcess(id: string, config: import("@mcservergui/shared").ServerC
     const text = data.toString();
     if (text.includes("Done") && text.includes("For help, type \"help\"")) {
       running.status = "running";
-      io?.to(`server:${id}`).emit("server:status", { status: "running" });
+      io?.emit("server:status", { serverId: id, status: "running" });
       updateServer(id, { lastStartedAt: new Date().toISOString() }).catch(() => {});
     }
   });
@@ -262,7 +262,8 @@ function handleProcess(id: string, config: import("@mcservergui/shared").ServerC
       running.forceKillTimer = null;
     }
     running.status = "stopped";
-    io?.to(`server:${id}`).emit("server:status", {
+    io?.emit("server:status", {
+      serverId: id,
       status: code === 0 ? "stopped" : "crashed",
       exitCode: code,
     });
@@ -295,14 +296,14 @@ export async function stopServer(id: string): Promise<{ success: boolean; error?
   }
 
   running.status = "stopping";
-  getIO()?.to(`server:${id}`).emit("server:status", { status: "stopping" });
+  getIO()?.emit("server:status", { serverId: id, status: "stopping" });
 
   running.process.stdin?.write("stop\n");
 
   running.forceKillTimer = setTimeout(() => {
     if (runningServers.has(id)) {
       killProcess(running.process);
-      getIO()?.to(`server:${id}`).emit("server:status", { status: "crashed", exitCode: -1 });
+      getIO()?.emit("server:status", { serverId: id, status: "crashed", exitCode: -1 });
       runningServers.delete(id);
       onlinePlayers.delete(id);
     }

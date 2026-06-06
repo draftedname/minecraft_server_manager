@@ -21,6 +21,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
 import { useChunkedUpload } from "@/hooks/useChunkedUpload";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { ServerConfig, ServerInfo, WorldInfo, BackupMeta } from "@mcservergui/shared";
 
 
@@ -52,6 +53,7 @@ export default function Worlds() {
 
   const server = serverData?.config;
   const isRunning = serverData?.status === "running";
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const { data: driveStatus } = useQuery<{ authenticated: boolean }>({
     queryKey: ["drive", "status"],
@@ -189,6 +191,19 @@ export default function Worlds() {
     },
     onError: (err: any) => {
       toast({ title: "Activation failed", description: err.response?.data?.error || err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteWorldMutation = useMutation({
+    mutationFn: async (worldName: string) => {
+      await api.delete(`/servers/${serverId}/worlds/${encodeURIComponent(worldName)}`);
+    },
+    onSuccess: () => {
+      toast({ title: "World deleted" });
+      queryClient.invalidateQueries({ queryKey: ["server", serverId, "worlds"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Delete failed", description: err.response?.data?.error || err.message, variant: "destructive" });
     },
   });
 
@@ -351,6 +366,16 @@ export default function Worlds() {
                       )}
                       Drive
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setPendingDelete(world.name)}
+                      disabled={isRunning || deleteWorldMutation.isPending}
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      Delete
+                    </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -506,6 +531,20 @@ export default function Worlds() {
         </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="Delete World"
+        description={`Permanently delete "${pendingDelete}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (pendingDelete) {
+            deleteWorldMutation.mutate(pendingDelete);
+            setPendingDelete(null);
+          }
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

@@ -449,4 +449,34 @@ router.put("/:serverId/worlds/:worldName/activate", (req: Request, res: Response
   res.json({ success: true, worldName, active: true });
 });
 
+// Delete a world
+router.delete("/:serverId/worlds/:worldName", (req: Request, res: Response) => {
+  const serverId = p(req.params, "serverId");
+  const worldName = p(req.params, "worldName");
+  const server = loadServer(serverId);
+  if (!server) { res.status(404).json({ error: "Server not found" }); return; }
+  if (getRunningServer(serverId)) { res.status(400).json({ error: "Stop the server before deleting a world" }); return; }
+
+  const serverDir = getServerDir(serverId);
+  const worldPath = path.join(serverDir, worldName);
+  if (!existsSync(worldPath) || !existsSync(path.join(worldPath, "level.dat"))) {
+    res.status(404).json({ error: "World not found" });
+    return;
+  }
+
+  // Check if deleting the active world, update server.properties
+  const propsPath = path.join(serverDir, "server.properties");
+  if (existsSync(propsPath)) {
+    const lines = readFileSync(propsPath, "utf-8").split("\n");
+    const newLines = lines.map((l) => {
+      if (l.startsWith("level-name=")) return `level-name=world`;
+      return l;
+    });
+    writeFileSync(propsPath, newLines.join("\n"), "utf-8");
+  }
+
+  rmSync(worldPath, { recursive: true, force: true });
+  res.json({ success: true });
+});
+
 export { router as worldsRouter };

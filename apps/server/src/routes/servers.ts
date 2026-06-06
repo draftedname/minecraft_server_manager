@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import path from "path";
-import { existsSync, mkdirSync, rmSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "fs";
 import { v4 as uuid } from "uuid";
 import { loadServers, addServer, removeServer, loadServer, ensureServerDir, saveServers, updateServer, getServerDir } from "../services/DataStore.js";
 import { startServer, stopServer, restartServer, restartServerAsync, sendCommand, getServerInfo, getRunningServer } from "../services/ServerManager.js";
@@ -85,6 +85,9 @@ router.post("/", asyncHandler(async (req: Request, res: Response) => {
   };
 
   const dir = ensureServerDir(id);
+
+  // Ensure EULA prompt shows on first start
+  writeFileSync(path.join(dir, "eula.txt"), "eula=false", "utf-8");
 
   try {
     if (body.type === "vanilla") {
@@ -206,6 +209,16 @@ router.get("/:id/console-history", (req: Request, res: Response) => {
 
   const lines = readLastLines(logPath, 1000);
   res.json({ lines });
+});
+
+// Accept EULA
+router.post("/:id/eula/accept", (req: Request, res: Response) => {
+  const id = p(req.params, "id");
+  const config = loadServer(id);
+  if (!config) { res.status(404).json({ error: "Server not found" }); return; }
+  const eulaPath = path.join(SERVERS_DIR, id, "eula.txt");
+  writeFileSync(eulaPath, "eula=true", "utf-8");
+  res.json({ success: true });
 });
 
 // Analyze server log via mclo.gs
