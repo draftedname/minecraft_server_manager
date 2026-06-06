@@ -77,6 +77,7 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
   const unsubscribe = useCallback((serverId: string) => {
     const socket = getSocket();
     socket.emit("console:unsubscribe", serverId);
+    activeServers.current.delete(serverId);
   }, []);
 
   return (

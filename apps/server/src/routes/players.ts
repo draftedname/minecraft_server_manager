@@ -27,6 +27,21 @@ function writePlayerList(serverDir: string, filename: string, entries: PlayerEnt
   writeFileSync(filePath, JSON.stringify(entries, null, 2), "utf-8");
 }
 
+const NAME_RE = /^[a-zA-Z0-9_]{1,16}$/;
+
+function playerRoute(command: (name: string) => string) {
+  return (req: Request, res: Response) => {
+    const serverId = p(req.params, "serverId");
+    const name = p(req.params, "name");
+    if (!NAME_RE.test(name)) {
+      res.status(400).json({ error: "Invalid player name" });
+      return;
+    }
+    const result = sendCommand(serverId, command(name));
+    res.json({ success: result.success, error: result.error });
+  };
+}
+
 router.get("/:serverId/players", (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const server = loadServer(serverId);
@@ -46,67 +61,12 @@ router.get("/:serverId/players", (req: Request, res: Response) => {
   });
 });
 
-// Kick player
-router.post("/:serverId/players/:name/kick", (req: Request, res: Response) => {
-  const serverId = p(req.params, "serverId");
-  const name = p(req.params, "name");
-  if (!/^[a-zA-Z0-9_]{1,16}$/.test(name)) {
-    res.status(400).json({ error: "Invalid player name" });
-    return;
-  }
-  const result = sendCommand(serverId, `kick ${name}`);
-  res.json({ success: result.success, error: result.error });
-});
+router.post("/:serverId/players/:name/kick", playerRoute((n) => `kick ${n}`));
+router.post("/:serverId/players/:name/ban", playerRoute((n) => `ban ${n}`));
+router.post("/:serverId/players/:name/op", playerRoute((n) => `op ${n}`));
+router.post("/:serverId/players/:name/deop", playerRoute((n) => `deop ${n}`));
+router.post("/:serverId/players/:name/unban", playerRoute((n) => `pardon ${n}`));
 
-// Ban player
-router.post("/:serverId/players/:name/ban", (req: Request, res: Response) => {
-  const serverId = p(req.params, "serverId");
-  const name = p(req.params, "name");
-  if (!/^[a-zA-Z0-9_]{1,16}$/.test(name)) {
-    res.status(400).json({ error: "Invalid player name" });
-    return;
-  }
-  const result = sendCommand(serverId, `ban ${name}`);
-  res.json({ success: result.success, error: result.error });
-});
-
-// Op player
-router.post("/:serverId/players/:name/op", (req: Request, res: Response) => {
-  const serverId = p(req.params, "serverId");
-  const name = p(req.params, "name");
-  if (!/^[a-zA-Z0-9_]{1,16}$/.test(name)) {
-    res.status(400).json({ error: "Invalid player name" });
-    return;
-  }
-  const result = sendCommand(serverId, `op ${name}`);
-  res.json({ success: result.success, error: result.error });
-});
-
-// Deop player
-router.post("/:serverId/players/:name/deop", (req: Request, res: Response) => {
-  const serverId = p(req.params, "serverId");
-  const name = p(req.params, "name");
-  if (!/^[a-zA-Z0-9_]{1,16}$/.test(name)) {
-    res.status(400).json({ error: "Invalid player name" });
-    return;
-  }
-  const result = sendCommand(serverId, `deop ${name}`);
-  res.json({ success: result.success, error: result.error });
-});
-
-// Unban player
-router.post("/:serverId/players/:name/unban", (req: Request, res: Response) => {
-  const serverId = p(req.params, "serverId");
-  const name = p(req.params, "name");
-  if (!/^[a-zA-Z0-9_]{1,16}$/.test(name)) {
-    res.status(400).json({ error: "Invalid player name" });
-    return;
-  }
-  const result = sendCommand(serverId, `pardon ${name}`);
-  res.json({ success: result.success, error: result.error });
-});
-
-// Unban IP
 router.post("/:serverId/players/:name/unban-ip", (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const ip = p(req.params, "name");

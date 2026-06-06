@@ -12,6 +12,10 @@ interface NetworkState {
 
 const networkStates = new Map<string, NetworkState>();
 
+function isWindows(): boolean {
+  return process.platform === "win32";
+}
+
 function scQuery(): { exists: boolean; running: boolean; error?: string } {
   try {
     const result = spawnSync("sc", ["query", "playitd"], { encoding: "utf-8", stdio: "pipe", windowsHide: true });
@@ -68,6 +72,13 @@ function broadcastState(serverId: string, state: NetworkState): void {
 
 export async function enablePublicMode(serverId: string, port: number = 25565): Promise<NetworkState> {
   const state = getNetworkState(serverId);
+
+  if (!isWindows()) {
+    state.enabled = false;
+    state.error = "playit.gg service management is only available on Windows.";
+    broadcastState(serverId, state);
+    return state;
+  }
 
   const { exists } = scQuery();
   if (!exists) {

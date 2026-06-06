@@ -29,7 +29,8 @@ router.post("/:serverId/install-modpack", asyncHandler(async (req: Request, res:
   }
 
   try {
-    const result = await installModpack(serverDir, String(versionId));
+    const includeFiles = req.body.includeFiles?.length ? new Set<string>(req.body.includeFiles) : undefined;
+    const result = await installModpack(serverDir, String(versionId), undefined, undefined, includeFiles);
 
     await updateServer(serverId, {
       gameVersion: result.gameVersion,

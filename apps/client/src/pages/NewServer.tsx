@@ -51,6 +51,21 @@ interface ModVersion {
   loaders: string[];
 }
 
+interface ModpackFile {
+  path: string;
+  size: number;
+  downloads: string | null;
+  env: { client?: string; server?: string } | null;
+}
+
+interface ModpackContents {
+  name: string;
+  gameVersion: string;
+  loader: string;
+  files: ModpackFile[];
+  fileCount: number;
+}
+
 const SORT_MODPACKS = [
   { value: "downloads", label: "Most Downloaded" },
   { value: "follows", label: "Most Followed" },
@@ -77,6 +92,12 @@ export default function NewServer() {
   const [selectedPack, setSelectedPack] = useState<ModrinthProject | null>(null);
   const [versionDialog, setVersionDialog] = useState(false);
   const [selectedVersionId, setSelectedVersionId] = useState("");
+
+  // Preview dialog state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [modpackContents, setModpackContents] = useState<ModpackContents | null>(null);
+  const [includedFiles, setIncludedFiles] = useState<Set<string>>(new Set());
+  const [loadingContents, setLoadingContents] = useState(false);
 
   const { data: vanillaVersions, isLoading: vLoading } = useQuery<string[]>({
     queryKey: ["versions", "vanilla"],
@@ -139,6 +160,7 @@ export default function NewServer() {
         payload.modpackId = selectedPack?.project_id;
         payload.modpackVersionId = selectedVersionId;
         if (loaderVersion) payload.loaderVersion = loaderVersion;
+        if (includedFiles.size > 0) payload.includeFiles = Array.from(includedFiles);
       }
       const { data } = await api.post("/servers", payload);
       return data;
@@ -170,9 +192,18 @@ export default function NewServer() {
     setVersionDialog(true);
   };
 
-  const handleConfirmPack = () => {
+  const handleConfirmPack = async () => {
     if (!selectedVersionId) return;
-    createMutation.mutate();
+    setVersionDialog(false);
+    setPreviewOpen(true);
+    try {
+      const { data } = await api.get(`/modrinth/version/${selectedVersionId}/contents`);
+      setModpackContents(data);
+      setIncludedFiles(new Set(data.files.map((f: ModpackFile) => f.path)));
+    } catch (err: any) {
+      toast({ title: "Failed to load modpack preview", description: err.response?.data?.error || err.message, variant: "destructive" });
+      setPreviewOpen(false);
+    }
   };
 
   return (
@@ -449,6 +480,106 @@ export default function NewServer() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Preview Dialog */}
+      <Dialog open={previewOpen} onOpenChange={(open) => { if (!open) setPreviewOpen(false); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Preview: {modpackContents?.name || selectedPack?.title}</DialogTitle>
+          </DialogHeader>
+          {loadingContents ? (
+            <div className="flex items-center gap-2 py-8 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading modpack contents...
+            </div>
+          ) : !modpackContents ? (
+            <p className="text-sm text-destructive">Failed to load modpack</p>
+          ) : (
+            <div className="flex flex-col flex-1 min-h-0">
+              {/* Summary */}
+              <div className="flex items-center gap-3 mb-3 text-sm">
+                <Badge variant="outline">{modpackContents.gameVersion}</Badge>
+                <Badge variant="outline">{modpackContents.loader}</Badge>
+                <span className="text-muted-foreground">{modpackContents.fileCount} files</span>
+                <span className="text-muted-foreground">{includedFiles.size} selected</span>
+              </div>
+
+              {/* File list grouped by folder */}
+              <div className="flex-1 max-h-80 space-y-1 overflow-y-auto">
+                {modpackContents.files.map((file) => {
+                  const isIncluded = includedFiles.has(file.path);
+                  const envServer = file.env?.server;
+                  return (
+                    <label
+                      key={file.path}
+                      className={`flex items-center gap-2 rounded px-2 py-1 text-xs cursor-pointer transition-colors ${
+                        isIncluded ? "bg-primary/5 hover:bg-primary/10" : "opacity-50 hover:opacity-80"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isIncluded}
+                        onChange={() => {
+                          const next = new Set(includedFiles);
+                          if (isIncluded) next.delete(file.path);
+                          else next.add(file.path);
+                          setIncludedFiles(next);
+                        }}
+                        className="h-3.5 w-3.5 accent-primary"
+                      />
+                      <span className="flex-1 truncate">{file.path}</span>
+                      {envServer && (
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1 py-0 ${
+                            envServer === "required" ? "border-green-600 text-green-500" :
+                            envServer === "optional" ? "border-yellow-600 text-yellow-500" :
+                            "border-red-600 text-red-500"
+                          }`}
+                        >
+                          {envServer}
+                        </Badge>
+                      )}
+                      {file.size > 0 && (
+                        <span className="text-muted-foreground flex-shrink-0">
+                          {file.size >= 1048576
+                            ? `${(file.size / 1048576).toFixed(1)} MB`
+                            : file.size >= 1024
+                            ? `${(file.size / 1024).toFixed(0)} KB`
+                            : `${file.size} B`}
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+
+              <Separator className="my-3" />
+              <div className="flex justify-between items-center">
+                <p className="text-xs text-muted-foreground">
+                  {includedFiles.size} of {modpackContents.files.length} files will be installed
+                  {includedFiles.size < modpackContents.files.length && ` (${modpackContents.files.length - includedFiles.size} skipped)`}
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setPreviewOpen(false)}>Cancel</Button>
+                  <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
+                    {createMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                        Installing...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4 mr-1" />
+                        Install ({includedFiles.size} files)
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

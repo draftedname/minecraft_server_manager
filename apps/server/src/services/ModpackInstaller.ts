@@ -1,6 +1,7 @@
 import path from "path";
 import { existsSync, mkdirSync, rmSync, readFileSync, unlinkSync } from "fs";
-import { getVersion, downloadModFile } from "./ModrinthClient.js";
+import { getVersion, getProject, downloadModFile } from "./ModrinthClient.js";
+import { CLIENT_ONLY_PROJECTS, checkFabricJarEnvironment } from "./ModFilter.js";
 import { downloadFabricJar, downloadVanillaJar } from "./ServerJarDownloader.js";
 import { copyDirAsync } from "./FileUtils.js";
 import { safeJoin, PathTraversalError } from "./safeJoin.js";
@@ -64,11 +65,30 @@ async function resolveLoaderVersion(gameVersion: string, rawVersion: string | un
   return rawVersion;
 }
 
+function extractProjectIdFromUrl(url: string): string | null {
+  const match = url.match(/\/data\/([a-zA-Z0-9_-]+)\/versions\//);
+  return match ? match[1] : null;
+}
+
+function matchesBlacklist(filePath: string): boolean {
+  const basename = path.basename(filePath, ".jar").toLowerCase();
+  if (!basename) return false;
+  // Split on common separators and check every prefix chain against blacklist
+  // e.g. "sodium-fabric-0.5.11" -> check "sodium", "sodium-fabric", "sodium-fabric-0...
+  const tokens = basename.split(/[-_]+/);
+  for (let i = 1; i <= tokens.length; i++) {
+    const candidate = tokens.slice(0, i).join("-");
+    if (CLIENT_ONLY_PROJECTS.has(candidate)) return true;
+  }
+  return false;
+}
+
 export async function installModpack(
   serverDir: string,
   versionId: string,
   emit?: ProgressEmit,
-  preferredLoaderVersion?: string
+  preferredLoaderVersion?: string,
+  includeFiles?: Set<string>
 ): Promise<ModpackResult> {
   const version = await getVersion(versionId);
   const mrpackFile = version?.files?.find((f: any) => f.filename?.endsWith(".mrpack"));
@@ -112,6 +132,7 @@ export async function installModpack(
   const files = manifest.files || [];
   console.log(`Downloading ${files.length} mods...`);
   const modResults: string[] = [];
+  const serverSideCache = new Map<string, string>();
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
@@ -127,15 +148,49 @@ export async function installModpack(
     const lowerPath = file.path.toLowerCase();
     if (
       lowerPath.startsWith("resourcepacks/") ||
+      lowerPath.includes("/resourcepacks/") ||
       lowerPath.startsWith("shaderpacks/") ||
+      lowerPath.includes("/shaderpacks/") ||
       lowerPath.startsWith("shaders/") ||
-      lowerPath.startsWith("kubejs/assets/")
+      lowerPath.includes("/shaders/") ||
+      lowerPath.startsWith("kubejs/assets/") ||
+      lowerPath.includes("/kubejs/assets/")
     ) {
       console.log(`  Skipped (client path): ${file.path}`);
       continue;
     }
 
+    // Client-side preview filter
+    if (includeFiles && !includeFiles.has(file.path)) {
+      console.log(`  Skipped (preview filter): ${file.path}`);
+      continue;
+    }
+
     console.log(`  Installing: ${file.path} (env server: ${file.env?.server || "none"})`);
+
+    const projectId = extractProjectIdFromUrl(file.downloads[0]);
+
+    // Layer 1 (API): authoritative Modrinth server_side check (only if project ID is known)
+    if (projectId) {
+      try {
+        if (!serverSideCache.has(projectId)) {
+          const project = await getProject(projectId);
+          serverSideCache.set(projectId, project.server_side);
+        }
+        if (serverSideCache.get(projectId) === "unsupported") {
+          console.log(`  Filtered (API): ${file.path} - server_side: unsupported`);
+          continue;
+        }
+      } catch (e: any) {
+        console.warn(`  Warning: API check failed for project ${projectId}: ${e.message}`);
+      }
+    }
+
+    // Layer 2 (blacklist): fallback for mods that passed API check or have no project ID
+    if ((projectId && CLIENT_ONLY_PROJECTS.has(projectId)) || matchesBlacklist(file.path)) {
+      console.log(`  Filtered (blacklist): ${file.path}`);
+      continue;
+    }
 
     let filePath: string;
     try {
@@ -152,6 +207,24 @@ export async function installModpack(
     if (!existsSync(fileDir)) mkdirSync(fileDir, { recursive: true });
     try {
       await downloadModFile(file.downloads[0], filePath);
+
+      // Layer 3: JAR inspection
+      // NOTE: Only checks fabric.mod.json (Fabric/Quilt mods). Forge/NeoForge
+      // mods (META-INF/mods.toml) pass through unchecked. The blacklist
+      // partially mitigates this for known client-only Forge mods.
+      if (filePath.endsWith(".jar")) {
+        try {
+          const env = await checkFabricJarEnvironment(filePath);
+          if (env === "client") {
+            unlinkSync(filePath);
+            console.log(`  Filtered (JAR): ${file.path} - fabric environment: client`);
+            continue;
+          }
+        } catch (e: any) {
+          console.warn(`  Warning: JAR inspection failed for ${file.path}: ${e.message}`);
+        }
+      }
+
       modResults.push(file.path);
     } catch (e: any) {
       console.log(`  Failed: ${file.path} - ${e.message}`);

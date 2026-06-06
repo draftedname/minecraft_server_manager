@@ -9,6 +9,7 @@ import { checkJava } from "../services/JavaManager.js";
 import { SERVERS_DIR } from "../services/config.js";
 import { getIO } from "../websocket/index.js";
 import { readLastLines } from "../services/readLastLines.js";
+import { analyzeLogFile, readServerLog } from "../services/LogAnalyzer.js";
 import { installModpack } from "../services/ModpackInstaller.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import type { ServerConfig, CreateServerRequest } from "@mcservergui/shared";
@@ -99,7 +100,8 @@ router.post("/", asyncHandler(async (req: Request, res: Response) => {
 
       emit("Fetching modpack info...", 0, 1);
 
-      const result = await installModpack(dir, String(body.modpackVersionId), emit, body.loaderVersion || undefined);
+      const includeFiles = body.includeFiles?.length ? new Set<string>(body.includeFiles) : undefined;
+      const result = await installModpack(dir, String(body.modpackVersionId), emit, body.loaderVersion || undefined, includeFiles);
       config.gameVersion = result.gameVersion;
       config.loaderVersion = result.loaderVersion || config.loaderVersion;
       if (result.name && result.gameVersion) {
@@ -210,6 +212,23 @@ router.get("/:id/console-history", (req: Request, res: Response) => {
   const lines = readLastLines(logPath, 1000);
   res.json({ lines });
 });
+
+// Analyze server log via mclo.gs
+router.post("/:id/log-analyze", asyncHandler(async (req: Request, res: Response) => {
+  const id = p(req.params, "id");
+  const config = loadServer(id);
+  if (!config) {
+    res.status(404).json({ error: "Server not found" });
+    return;
+  }
+  const logContent = readServerLog(id);
+  if (!logContent) {
+    res.json({ analysis: null, note: "No log file found" });
+    return;
+  }
+  const result = await analyzeLogFile(logContent);
+  res.json(result);
+}));
 
 // Rename server
 router.put("/:id/name", asyncHandler(async (req: Request, res: Response) => {

@@ -86,7 +86,7 @@ const router = Router();
 const MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024; // 4GB total
 
 // Initialize a new chunked upload
-router.post("/upload/init", (req: Request, res: Response) => {
+router.post("/upload/init", asyncHandler((req: Request, res: Response) => {
   const { filename, totalChunks } = req.body;
 
   if (!filename || !totalChunks) {
@@ -113,7 +113,7 @@ router.post("/upload/init", (req: Request, res: Response) => {
   });
 
   res.json({ uploadId });
-});
+}));
 
 // Finalize: assemble chunks into final file
 router.post("/upload/:uploadId/finalize", asyncHandler(async (req: Request, res: Response) => {

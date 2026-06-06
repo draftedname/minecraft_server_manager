@@ -38,6 +38,7 @@ export interface CreateServerRequest {
   ram: number;
   modpackId?: string;
   modpackVersionId?: string;
+  includeFiles?: string[];
 }
 
 export interface JavaInfo {

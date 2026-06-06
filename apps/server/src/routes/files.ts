@@ -10,6 +10,7 @@ import {
 } from "fs";
 import { loadServer, getServerDir } from "../services/DataStore.js";
 import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
+import { asyncHandler } from "../lib/asyncHandler.js";
 
 const router = Router();
 
@@ -174,7 +175,7 @@ router.get("/:serverId/files/download", (req: Request, res: Response) => {
 });
 
 // Open file in system editor
-router.post("/:serverId/files/open", async (req: Request, res: Response) => {
+router.post("/:serverId/files/open", asyncHandler(async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const { relpath } = req.body;
 
@@ -209,7 +210,7 @@ router.post("/:serverId/files/open", async (req: Request, res: Response) => {
   spawn(cmd, args, { detached: true, stdio: "ignore" }).unref();
 
   res.json({ success: true });
-});
+}));
 
 // Upload file
 router.post("/:serverId/files/upload", (req: Request, res: Response) => {

@@ -172,43 +172,44 @@ export async function resolveDependencies(
 
   if (!version.dependencies) return { versions, projects };
 
-  for (const dep of version.dependencies) {
-    if (dep.dependency_type !== "required") continue;
-    if (!dep.project_id) continue;
-    if (seenProjectIds.has(dep.project_id)) continue;
-    seenProjectIds.add(dep.project_id);
+  // Collect required deps at this level
+  const required = version.dependencies.filter(
+    (d) => d.dependency_type === "required" && d.project_id && !seenProjectIds.has(d.project_id)
+  );
+  for (const d of required) seenProjectIds.add(d.project_id!);
 
-    const depVersion = await getLatestCompatibleVersion(
-      dep.project_id,
-      gameVersion,
-      loader
-    );
+  // Batch-fetch versions in parallel
+  const depVersions = await Promise.all(
+    required.map((d) => getLatestCompatibleVersion(d.project_id!, gameVersion, loader))
+  );
 
-    if (!depVersion) continue;
+  // Batch-fetch project details in parallel
+  const depProjects = await Promise.all(
+    required.map((d) => getProject(d.project_id!).catch(() => null))
+  );
+  for (const p of depProjects) {
+    if (p) projects.push(p);
+  }
 
-    try {
-      const depDetails = await getProject(dep.project_id);
-      projects.push(depDetails);
-    } catch {
-      // project lookup failed, skip
+  // Recursively resolve sub-dependencies in parallel
+  const subResults = await Promise.all(
+    depVersions.filter((v): v is ModVersion => !!v).map((v) =>
+      resolveDependencies(v.id, gameVersion, loader, depth + 1)
+    )
+  );
+
+  // Merge resolved versions
+  for (const dv of depVersions) {
+    if (dv && !versions.find((e) => e.id === dv.id)) versions.push(dv);
+  }
+
+  // Merge sub-dependency results
+  for (const res of subResults) {
+    for (const v of res.versions) {
+      if (!versions.find((e) => e.id === v.id)) versions.push(v);
     }
-
-    const resolved = await resolveDependencies(
-      depVersion.id,
-      gameVersion,
-      loader,
-      depth + 1
-    );
-
-    for (const v of resolved.versions) {
-      if (!versions.find((existing) => existing.id === v.id)) {
-        versions.push(v);
-      }
-    }
-    for (const p of resolved.projects) {
-      if (!projects.find((existing) => existing.id === p.id)) {
-        projects.push(p);
-      }
+    for (const p of res.projects) {
+      if (!projects.find((e) => e.id === p.id)) projects.push(p);
     }
   }
 

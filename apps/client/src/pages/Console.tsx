@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Send, Server, Filter } from "lucide-react";
+import { Send, Server, Filter, Bug, AlertTriangle, CheckCircle2, Info, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +55,7 @@ export default function Console() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
+  const [showAnalysis, setShowAnalysis] = useState(false);
 
   const { lines: allLines, subscribe, unsubscribe } = useConsoleContext();
   const lines = allLines[serverId || ""] || [];
@@ -66,6 +67,15 @@ export default function Console() {
       return data;
     },
     enabled: !!serverId,
+  });
+
+  const { data: analysis, isLoading: analysisLoading, refetch: refetchAnalysis } = useQuery({
+    queryKey: ["server", serverId, "log-analyze"],
+    queryFn: async () => {
+      const { data } = await api.post(`/servers/${serverId}/log-analyze`);
+      return data;
+    },
+    enabled: !!serverId && showAnalysis,
   });
 
   useEffect(() => {
@@ -175,40 +185,127 @@ export default function Console() {
           <span className="text-xs text-muted-foreground">
             {filteredLines.length}/{lines.length}
           </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowAnalysis(!showAnalysis)}
+            className="h-7 gap-1 text-xs"
+          >
+            <Bug className="h-3.5 w-3.5" />
+            {showAnalysis ? "Console" : "Analyze"}
+          </Button>
         </div>
       </div>
 
-      <div
-        className="flex-1 overflow-auto bg-black p-4 font-mono text-sm"
-        onScroll={handleScroll}
-      >
-        {lines.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <div className="text-center">
-              <p className="text-lg">Waiting for console output...</p>
-              <p className="text-xs mt-2">Start the server from the Dashboard</p>
+      {showAnalysis ? (
+        <div className="flex-1 overflow-auto bg-black p-4 font-mono text-sm">
+          {analysisLoading ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Analyzing log...
             </div>
-          </div>
-        ) : filteredLines.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <p>No lines match the current filter</p>
-          </div>
-        ) : (
-          <>
-            {filteredLines.map((entry, i) => {
-              const text = stripFormatting(entry.line);
-              const cls = classifyLine(text);
-
-              return (
-                <div key={`${entry.timestamp}-${i}`} className={`whitespace-pre-wrap break-all leading-5 ${cls.color}`}>
-                  {text}
+          ) : !analysis ? (
+            <div className="text-muted-foreground">No analysis available</div>
+          ) : (
+            <div className="space-y-4">
+              {analysis.title && (
+                <div className="rounded border border-border p-3">
+                  <p className="text-sm font-bold text-primary">{analysis.title}</p>
+                  <p className="text-xs text-muted-foreground">{analysis.name} {analysis.version}</p>
                 </div>
-              );
-            })}
-            <div ref={bottomRef} />
-          </>
-        )}
-      </div>
+              )}
+
+              {analysis.analysis?.problems?.length > 0 ? (
+                <div>
+                  <h3 className="mb-2 text-sm font-bold text-red-400">
+                    Problems ({analysis.analysis.problems.length})
+                  </h3>
+                  {analysis.analysis.problems.map((p: any, i: number) => (
+                    <div key={i} className="mb-2 rounded border border-red-900/50 bg-red-950/20 p-2">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-400" />
+                        <div>
+                          <p className="text-sm text-red-300">{p.message}</p>
+                          {p.solutions?.length > 0 && p.solutions.map((s: any, j: number) => (
+                            <p key={j} className="mt-1 text-xs text-green-400">
+                              <CheckCircle2 className="mr-1 inline h-3 w-3" />
+                              {s.message}
+                            </p>
+                          ))}
+                          {p.counter > 1 && (
+                            <p className="mt-1 text-xs text-muted-foreground">Occurred {p.counter} times</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="mt-2">
+                    <Button variant="outline" size="sm" onClick={() => refetchAnalysis()} className="h-7 gap-1 text-xs">
+                      <Loader2 className="h-3.5 w-3.5" />
+                      Refresh Analysis
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded border border-green-900/50 bg-green-950/20 p-3">
+                  <p className="text-sm text-green-400">No problems detected</p>
+                </div>
+              )}
+
+              {analysis.analysis?.information?.length > 0 && (
+                <div>
+                  <h3 className="mb-2 text-sm font-bold text-blue-400">
+                    Information
+                  </h3>
+                  <div className="space-y-1">
+                    {analysis.analysis.information.map((info: any, i: number) => (
+                      <div key={i} className="flex items-start gap-2 rounded border border-border p-2">
+                        <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-400" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">{info.label}</p>
+                          <p className="text-sm text-gray-300">{info.value}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div
+          className="flex-1 overflow-auto bg-black p-4 font-mono text-sm"
+          onScroll={handleScroll}
+        >
+          {lines.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-muted-foreground">
+              <div className="text-center">
+                <p className="text-lg">Waiting for console output...</p>
+                <p className="text-xs mt-2">Start the server from the Dashboard</p>
+              </div>
+            </div>
+          ) : filteredLines.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-muted-foreground">
+              <p>No lines match the current filter</p>
+            </div>
+          ) : (
+            <>
+              {filteredLines.map((entry, i) => {
+                const text = stripFormatting(entry.line);
+                const cls = classifyLine(text);
+
+                return (
+                  <div key={`${entry.timestamp}-${i}`} className={`whitespace-pre-wrap break-all leading-5 ${cls.color}`}>
+                    {text}
+                  </div>
+                );
+              })}
+              <div ref={bottomRef} />
+            </>
+          )}
+        </div>
+      )}
 
       <div className="border-t border-border p-3">
         <div className="flex gap-2">

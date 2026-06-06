@@ -48,7 +48,7 @@ const io = new Server(httpServer, {
   },
 });
 
-app.use(cors());
+app.use(cors({ origin: /^https?:\/\/localhost(:\d+)?$/ }));
 
 // Mount chunk upload router before express.json to avoid buffering chunks in memory
 app.use("/api", uploadChunkRouter);
