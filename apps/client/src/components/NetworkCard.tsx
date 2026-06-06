@@ -48,7 +48,6 @@ export default function NetworkCard({ isRunning }: { isRunning: boolean }) {
       return data;
     },
     enabled: !!serverId,
-    refetchInterval: 5000,
   });
 
   // Listen for real-time state broadcasts from the backend

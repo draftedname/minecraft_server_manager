@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { loadServer, getServerDir, updateServer } from "../services/DataStore.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { installModpack } from "../services/ModpackInstaller.js";
+import type { ModpackInstallRequest } from "@mcservergui/shared";
 
 const router = Router();
 
@@ -16,7 +17,7 @@ router.post("/:serverId/install-modpack", asyncHandler(async (req: Request, res:
     return;
   }
 
-  const { versionId, modpackId } = req.body;
+  const { versionId, modpackId, includeFiles } = req.body as ModpackInstallRequest;
   if (!versionId) {
     res.status(400).json({ error: "versionId is required" });
     return;
@@ -29,8 +30,8 @@ router.post("/:serverId/install-modpack", asyncHandler(async (req: Request, res:
   }
 
   try {
-    const includeFiles = req.body.includeFiles?.length ? new Set<string>(req.body.includeFiles) : undefined;
-    const result = await installModpack(serverDir, String(versionId), undefined, undefined, includeFiles);
+    const includeSet = includeFiles?.length ? new Set<string>(includeFiles) : undefined;
+    const result = await installModpack(serverDir, String(versionId), undefined, undefined, includeSet);
 
     await updateServer(serverId, {
       gameVersion: result.gameVersion,

@@ -40,8 +40,8 @@ export function getOnlinePlayers(serverId: string): string[] {
 }
 
 function trackPlayerActivity(serverId: string, line: string) {
-  const joinMatch = line.match(/(\w+) joined the game/);
-  const leaveMatch = line.match(/(\w+) left the game/);
+  const joinMatch = line.match(/(\w+) joined the game$/);
+  const leaveMatch = line.match(/(\w+) left the game$/);
   if (joinMatch) {
     const players = onlinePlayers.get(serverId) || new Set<string>();
     players.add(joinMatch[1]);
@@ -325,6 +325,29 @@ export async function restartServer(id: string): Promise<{ success: boolean; err
   }
 
   return startServer(id);
+}
+
+export function restartServerAsync(id: string): void {
+  if (!runningServers.has(id)) {
+    startServer(id).catch(() => {});
+    return;
+  }
+
+  stopServer(id).then((stopResult) => {
+    if (!stopResult.success) return;
+
+    let attempts = 0;
+    const poll = () => {
+      if (!runningServers.has(id)) {
+        startServer(id).catch(() => {});
+        return;
+      }
+      if (++attempts < 70) {
+        setTimeout(poll, 500);
+      }
+    };
+    poll();
+  });
 }
 
 export function sendCommand(id: string, command: string): { success: boolean; error?: string } {

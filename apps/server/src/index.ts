@@ -50,6 +50,10 @@ const io = new Server(httpServer, {
 
 app.use(cors({ origin: /^https?:\/\/localhost(:\d+)?$/ }));
 
+// NOTE: API endpoints have no authentication. This app is designed for
+// LAN/localhost use. Anyone who can reach the app's port can control servers,
+// read/write files, and access Google Drive OAuth callbacks.
+
 // Mount chunk upload router before express.json to avoid buffering chunks in memory
 app.use("/api", uploadChunkRouter);
 

@@ -6,6 +6,7 @@ import { v4 as uuid } from "uuid";
 import { DATA_DIR } from "../services/config.js";
 import { safeJoin } from "../services/safeJoin.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
+import type { UploadInitRequest } from "@mcservergui/shared";
 
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 
@@ -87,7 +88,7 @@ const MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024; // 4GB total
 
 // Initialize a new chunked upload
 router.post("/upload/init", asyncHandler((req: Request, res: Response) => {
-  const { filename, totalChunks } = req.body;
+  const { filename, totalChunks } = req.body as UploadInitRequest;
 
   if (!filename || !totalChunks) {
     res.status(400).json({ error: "filename and totalChunks are required" });

@@ -135,7 +135,7 @@ export default function Files() {
     ? (files || []).filter((f) => f.name.toLowerCase().includes(fileSearch.toLowerCase()))
     : (files || []);
 
-  const breadcrumbs = currentPath ? currentPath.split("\\").filter(Boolean) : [];
+  const breadcrumbs = currentPath ? currentPath.split(/[\\/]/).filter(Boolean) : [];
 
   return (
     <div className="flex h-full flex-col">
@@ -219,7 +219,7 @@ export default function Files() {
             root
           </Button>
           {breadcrumbs.map((crumb, idx) => {
-            const fullPath = breadcrumbs.slice(0, idx + 1).join("\\");
+            const fullPath = breadcrumbs.slice(0, idx + 1).join("/");
             return (
               <span key={fullPath} className="flex items-center gap-1">
                 <ChevronRight className="h-3 w-3 text-muted-foreground" />

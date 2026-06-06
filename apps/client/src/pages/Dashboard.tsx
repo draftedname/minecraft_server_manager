@@ -2,13 +2,14 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Play, Square, RefreshCw, Trash2 } from "lucide-react";
 import api from "@/lib/api";
+import { getSocket } from "@/lib/socket";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { ServerInfo } from "@mcservergui/shared";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -21,8 +22,17 @@ export default function Dashboard() {
       const { data } = await api.get("/servers", { params: { status: "true" } });
       return data;
     },
-    refetchInterval: 3000,
   });
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket.connected) socket.connect();
+    const handler = () => {
+      queryClient.invalidateQueries({ queryKey: ["servers", "status"] });
+    };
+    socket.on("server:status", handler);
+    return () => { socket.off("server:status", handler); };
+  }, [queryClient]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {

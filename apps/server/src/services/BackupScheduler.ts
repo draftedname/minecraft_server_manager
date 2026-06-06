@@ -69,7 +69,7 @@ export function startScheduler(): void {
     } catch (err) {
       console.log(`[BackupScheduler] Cron job failed: ${(err as Error).message}`);
     }
-  });
+  }, { timezone: "Etc/UTC" });
 
   console.log(`[BackupScheduler] Started: every ${minutes} min (cron: ${cronExpr})`);
 }

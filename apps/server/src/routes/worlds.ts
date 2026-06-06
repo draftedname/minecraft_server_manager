@@ -10,7 +10,7 @@ import { BACKUPS_DIR, DATA_DIR } from "../services/config.js";
 import { restoreWorld, restoreWorldFromDrive } from "../services/WorldRestoreService.js";
 import { getRunningServer } from "../services/ServerManager.js";
 import { copyReadable } from "../services/FileUtils.js";
-import type { WorldInfo, BackupMeta } from "@mcservergui/shared";
+import type { WorldInfo, BackupMeta, WorldImportRequest } from "@mcservergui/shared";
 import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 const router = Router();
@@ -185,7 +185,7 @@ router.post("/:serverId/worlds/import", asyncHandler(async (req: Request, res: R
     return;
   }
 
-  const { zipPath } = req.body;
+  const { zipPath } = req.body as WorldImportRequest;
 
   if (!zipPath) {
     res.status(400).json({ error: "zipPath is required" });
@@ -277,12 +277,25 @@ router.post("/:serverId/worlds/import", asyncHandler(async (req: Request, res: R
 }));
 
 const sizeCache = new Map<string, { size: number; timestamp: number }>();
-const SIZE_CACHE_TTL = 30000; // 30 seconds
+const SIZE_CACHE_TTL = 30000;
+const sizeComputing = new Set<string>();
 
 async function getDirSizeAsync(dir: string): Promise<number> {
   const cached = sizeCache.get(dir);
   if (cached && Date.now() - cached.timestamp < SIZE_CACHE_TTL) return cached.size;
 
+  // Return stale value or 0 immediately, recompute in background
+  const stale = cached?.size ?? 0;
+
+  if (!sizeComputing.has(dir)) {
+    sizeComputing.add(dir);
+    computeDirSize(dir).finally(() => sizeComputing.delete(dir));
+  }
+
+  return stale;
+}
+
+async function computeDirSize(dir: string): Promise<void> {
   let size = 0;
   const names = await readdir(dir, { withFileTypes: true });
   for (const entry of names) {
@@ -296,9 +309,7 @@ async function getDirSizeAsync(dir: string): Promise<number> {
       } catch {}
     }
   }
-
   sizeCache.set(dir, { size, timestamp: Date.now() });
-  return size;
 }
 
 function findBackupZip(serverId: string, backupId: string): string | null {

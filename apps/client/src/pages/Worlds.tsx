@@ -20,9 +20,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
+import { useChunkedUpload } from "@/hooks/useChunkedUpload";
 import type { ServerConfig, ServerInfo, WorldInfo, BackupMeta } from "@mcservergui/shared";
 
-const CHUNK_SIZE = 1024 * 1024; // 1MB per chunk
 
 function formatSize(bytes: number | string) {
   const n = typeof bytes === "string" ? parseInt(bytes) : bytes;
@@ -203,64 +203,39 @@ export default function Worlds() {
 
   // World upload
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const { uploading: isUploading, progress: uploadProgress, error: uploadError, upload, cancel } = useChunkedUpload();
 
   const uploadWorld = async (file: File) => {
-    setIsUploading(true);
-    setUploadProgress(0);
-    try {
-      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    const ok = await upload(file, "", async (zipPath: string) => {
+      try {
+        const { data: importData } = await api.post(`/servers/${serverId}/worlds/import`, { zipPath });
 
-      // 1. Init session
-      const { data: initData } = await api.post("/upload/init", {
-        filename: file.name,
-        totalChunks,
-      });
-      const uploadId: string = initData.uploadId;
-
-      // 2. Upload chunks
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const chunk = file.slice(start, end);
-        await api.post(`/upload/${uploadId}/chunk/${i}`, chunk, {
-          headers: { "Content-Type": "application/octet-stream" },
-        });
-        setUploadProgress(Math.round(((i + 1) / totalChunks) * 90));
+        if (importData.warnings?.length > 0) {
+          toast({
+            title: "World imported with warnings",
+            description: importData.warnings[0],
+            variant: "default",
+          });
+        } else {
+          toast({ title: "World imported" });
+        }
+        queryClient.invalidateQueries({ queryKey: ["server", serverId, "worlds"] });
+        queryClient.invalidateQueries({ queryKey: ["server", serverId, "properties"] });
+      } catch (err: any) {
+        const status = err.response?.status;
+        const msg = err.response?.data?.error || err.message;
+        if (status === 400 && msg?.toLowerCase().includes("running")) {
+          toast({ title: "Stop the server before importing a world", variant: "destructive" });
+        } else {
+          toast({ title: "Import failed", description: msg, variant: "destructive" });
+        }
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }
+    });
 
-      // 3. Finalize
-      const { data: finalData } = await api.post(`/upload/${uploadId}/finalize`);
-      const zipPath: string = finalData.path;
-      setUploadProgress(95);
-
-      // 4. Import world
-      const { data: importData } = await api.post(`/servers/${serverId}/worlds/import`, { zipPath });
-
-      setUploadProgress(100);
-      if (importData.warnings?.length > 0) {
-        toast({
-          title: "World imported with warnings",
-          description: importData.warnings[0],
-          variant: "default",
-        });
-      } else {
-        toast({ title: "World imported" });
-      }
-      queryClient.invalidateQueries({ queryKey: ["server", serverId, "worlds"] });
-      queryClient.invalidateQueries({ queryKey: ["server", serverId, "properties"] });
-    } catch (err: any) {
-      const status = err.response?.status;
-      const msg = err.response?.data?.error || err.message;
-      if (status === 400 && msg?.toLowerCase().includes("running")) {
-        toast({ title: "Stop the server before importing a world", variant: "destructive" });
-      } else {
-        toast({ title: "Import failed", description: msg, variant: "destructive" });
-      }
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!ok) {
+      if (uploadError) toast({ title: "Upload failed", description: uploadError, variant: "destructive" });
     }
   };
 

@@ -17,6 +17,7 @@ import {
   FolderOpen,
 } from "lucide-react";
 import api from "@/lib/api";
+import { getSocket } from "@/lib/socket";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -70,10 +71,20 @@ export default function ServerDashboard() {
       return data;
     },
     enabled: !!serverId,
-    refetchInterval: 2000,
   });
 
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!serverId) return;
+    const socket = getSocket();
+    if (!socket.connected) socket.connect();
+    const handler = () => {
+      queryClient.invalidateQueries({ queryKey: ["server", serverId] });
+    };
+    socket.on("server:status", handler);
+    return () => { socket.off("server:status", handler); };
+  }, [serverId, queryClient]);
 
   const ramMutation = useMutation({
     mutationFn: async (ram: number) => {
@@ -184,7 +195,7 @@ export default function ServerDashboard() {
             <span className="capitalize">{config.type === "modpack" ? "Modpack" : config.type}</span>
             <span>{config.gameVersion}</span>
             {(config.type === "fabric" || config.type === "modpack") && loaderVersions && (
-              <Select value={config.loaderVersion || ""} onValueChange={(v) => setPendingLoader(v)} disabled={loaderMutation.isPending}>
+              <Select value={config.loaderVersion || ""} onValueChange={(v) => setPendingLoader(v)} disabled={loaderMutation.isPending || isRunning}>
                 <SelectTrigger className="h-7 w-36 text-xs">
                   <SelectValue placeholder="Loader" />
                 </SelectTrigger>

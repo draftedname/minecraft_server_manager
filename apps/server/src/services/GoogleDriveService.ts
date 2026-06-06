@@ -15,7 +15,7 @@ function ensureDirs() {
 }
 
 function getRedirectUri(): string {
-  const port = process.env.MCSERVERGUI_PORT || "3456";
+  const port = process.env.MCSERVERGUI_WEB_PORT || process.env.MCSERVERGUI_PORT || "3456";
   return `http://localhost:${port}/api/drive/oauth2callback`;
 }
 

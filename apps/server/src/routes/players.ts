@@ -3,7 +3,7 @@ import path from "path";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { loadServer, getServerDir } from "../services/DataStore.js";
 import { getOnlinePlayers, sendCommand } from "../services/ServerManager.js";
-import type { PlayerEntry } from "@mcservergui/shared";
+import type { PlayerEntry, UpdateOpsRequest, UpdatePlayerListRequest } from "@mcservergui/shared";
 
 const router = Router();
 
@@ -86,7 +86,7 @@ router.put("/:serverId/players/whitelist", (req: Request, res: Response) => {
     return;
   }
 
-  const { entries } = req.body;
+  const { entries } = req.body as UpdatePlayerListRequest;
   if (!Array.isArray(entries)) {
     res.status(400).json({ error: "entries array is required" });
     return;
@@ -104,7 +104,7 @@ router.put("/:serverId/players/ops", (req: Request, res: Response) => {
     return;
   }
 
-  const { entries } = req.body;
+  const { entries } = req.body as UpdateOpsRequest;
   if (!Array.isArray(entries)) {
     res.status(400).json({ error: "entries array is required" });
     return;

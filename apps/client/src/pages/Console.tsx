@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Send, Server, Filter, Bug, AlertTriangle, CheckCircle2, Info, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -51,8 +52,8 @@ export default function Console() {
   const [command, setCommand] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const parentRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [showAnalysis, setShowAnalysis] = useState(false);
@@ -85,12 +86,6 @@ export default function Console() {
       unsubscribe(serverId);
     };
   }, [serverId]);
-
-  useEffect(() => {
-    if (autoScroll) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [lines, autoScroll]);
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
@@ -154,6 +149,19 @@ export default function Console() {
       }
     });
   }, [lines, filterMode]);
+
+  const virtualizer = useVirtualizer({
+    count: filteredLines.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 20,
+    overscan: 5,
+  });
+
+  useEffect(() => {
+    if (autoScroll && filteredLines.length > 0) {
+      virtualizer.scrollToIndex(filteredLines.length - 1, { align: "end" });
+    }
+  }, [filteredLines.length, autoScroll]);
 
   return (
     <div className="flex h-full flex-col">
@@ -275,6 +283,7 @@ export default function Console() {
         </div>
       ) : (
         <div
+          ref={parentRef}
           className="flex-1 overflow-auto bg-black p-4 font-mono text-sm"
           onScroll={handleScroll}
         >
@@ -290,19 +299,26 @@ export default function Console() {
               <p>No lines match the current filter</p>
             </div>
           ) : (
-            <>
-              {filteredLines.map((entry, i) => {
+            <div
+              style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}
+            >
+              {virtualizer.getVirtualItems().map((vi) => {
+                const entry = filteredLines[vi.index];
                 const text = stripFormatting(entry.line);
                 const cls = classifyLine(text);
-
                 return (
-                  <div key={`${entry.timestamp}-${i}`} className={`whitespace-pre-wrap break-all leading-5 ${cls.color}`}>
+                  <div
+                    key={vi.key}
+                    data-index={vi.index}
+                    ref={virtualizer.measureElement}
+                    className={`absolute top-0 left-0 w-full whitespace-pre-wrap break-all leading-5 ${cls.color}`}
+                    style={{ transform: `translateY(${vi.start}px)` }}
+                  >
                     {text}
                   </div>
                 );
               })}
-              <div ref={bottomRef} />
-            </>
+            </div>
           )}
         </div>
       )}

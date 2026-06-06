@@ -3,7 +3,7 @@ import path from "path";
 import { existsSync, mkdirSync, rmSync, readFileSync } from "fs";
 import { v4 as uuid } from "uuid";
 import { loadServers, addServer, removeServer, loadServer, ensureServerDir, saveServers, updateServer, getServerDir } from "../services/DataStore.js";
-import { startServer, stopServer, restartServer, sendCommand, getServerInfo, getRunningServer } from "../services/ServerManager.js";
+import { startServer, stopServer, restartServer, restartServerAsync, sendCommand, getServerInfo, getRunningServer } from "../services/ServerManager.js";
 import { downloadVanillaJar, downloadFabricJar } from "../services/ServerJarDownloader.js";
 import { checkJava } from "../services/JavaManager.js";
 import { SERVERS_DIR } from "../services/config.js";
@@ -92,7 +92,6 @@ router.post("/", asyncHandler(async (req: Request, res: Response) => {
     } else if (body.type === "fabric") {
       await downloadFabricJar(getServerDir(id), body.gameVersion!, body.loaderVersion!);
     } else if (body.type === "modpack") {
-      const { getVersion, downloadModFile } = await import("../services/ModrinthClient.js");
       const io = getIO();
       const emit = (msg: string, current: number, total: number) => {
         io?.emit("download:progress", { message: msg, current, total });
@@ -171,16 +170,12 @@ router.post("/:id/stop", asyncHandler(async (req: Request, res: Response) => {
   res.json({ success: true });
 }));
 
-// Restart server
-router.post("/:id/restart", asyncHandler(async (req: Request, res: Response) => {
+// Restart server (non-blocking — responds immediately, polls in background)
+router.post("/:id/restart", (req: Request, res: Response) => {
   const id = p(req.params, "id");
-  const result = await restartServer(id);
-  if (!result.success) {
-    res.status(400).json({ error: result.error });
-    return;
-  }
+  restartServerAsync(id);
   res.json({ success: true });
-}));
+});
 
 // Send command
 router.post("/:id/command", (req: Request, res: Response) => {

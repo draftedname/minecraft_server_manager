@@ -43,6 +43,10 @@ function next(): void {
   }
 }
 
+// withMutex serializes write operations. Do NOT call withMutex or any
+// mutex-protected function from within a mutex callback — the queue-based
+// lock is non-reentrant and will deadlock. loadServer/loadServers are
+// read-only and safe to call from any context, including inside the mutex.
 function withMutex<T>(fn: () => T | Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const execute = () => {

@@ -47,6 +47,10 @@ export async function downloadFabricJar(
   }
 
   // 2. Get Fabric loader profile (lists all libraries + main class)
+  if (!/^\d+\.\d+\.\d+/.test(loaderVersion)) {
+    throw new Error(`Invalid loader version format: ${loaderVersion}`);
+  }
+
   const profileUrl = `${FABRIC_META}/loader/${gameVersion}/${loaderVersion}`;
   const profile = await fetchJson(profileUrl);
   const launcherMeta = profile.launcherMeta;
@@ -92,7 +96,6 @@ export async function downloadFabricJar(
   const classpath = cp.join(sep);
 
   // 6. Save profile info for ServerManager
-  const { writeFileSync } = await import("fs");
   writeFileSync(
     path.join(serverDir, "fabric-profile.json"),
     JSON.stringify({ classpath: cp, mainClass, loaderVersion, gameVersion }),

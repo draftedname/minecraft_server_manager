@@ -81,3 +81,41 @@ export interface PlayerEntry {
   uuid: string;
   name: string;
 }
+
+export interface UploadInitRequest {
+  filename: string;
+  totalChunks: number;
+}
+
+export interface ModpackInstallRequest {
+  versionId: string;
+  modpackId?: string;
+  includeFiles?: string[];
+}
+
+export interface ModInstallRequest {
+  versionId: string;
+  projectId: string;
+}
+
+export interface WorldImportRequest {
+  zipPath: string;
+}
+
+export interface WorldRestoreRequest {
+  backupId: string;
+  worldName: string;
+}
+
+export interface UpdateOpsRequest {
+  entries: Array<{
+    uuid: string;
+    name: string;
+    level?: number;
+    bypassesPlayerLimit?: boolean;
+  }>;
+}
+
+export interface UpdatePlayerListRequest {
+  entries: PlayerEntry[];
+}

@@ -11,7 +11,7 @@ import {
 } from "../services/ModrinthClient.js";
 import { getIO } from "../websocket/index.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
-import type { ModInfo } from "@mcservergui/shared";
+import type { ModInfo, ModInstallRequest } from "@mcservergui/shared";
 
 const router = Router();
 
@@ -59,7 +59,7 @@ router.post("/:serverId/mods/install", asyncHandler(async (req: Request, res: Re
     return;
   }
 
-  const { versionId, projectId } = req.body;
+  const { versionId, projectId } = req.body as ModInstallRequest;
   if (!versionId) {
     res.status(400).json({ error: "versionId is required" });
     return;
