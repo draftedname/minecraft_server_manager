@@ -7,7 +7,7 @@ A standalone desktop application for managing Minecraft servers no command line,
 
 ---
 
-## Screenshots
+## Preview
 
 ![App](screenshots/Animation.gif)
 
