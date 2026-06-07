@@ -9,7 +9,7 @@ A standalone desktop application for managing Minecraft servers no command line,
 
 ## Screenshots
 
-> *(Coming soon dashboard, console, and mod browser screenshots)*
+![App](screenshots/Animation.gif)
 
 ---
 
