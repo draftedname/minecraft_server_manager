@@ -57,18 +57,12 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
       activeServers.current.add(serverId);
       api.get(`/servers/${serverId}/console-history`).then(({ data }) => {
         if (data.lines?.length > 0) {
-          setLines((prev) => {
-            const current = prev[serverId] || [];
-            if (current.length === 0) {
-              const now = Date.now();
-              const historyLines: ConsoleLine[] = data.lines.map((l: string) => ({
-                line: l,
-                timestamp: now,
-              }));
-              return { ...prev, [serverId]: historyLines };
-            }
-            return prev;
-          });
+          const now = Date.now();
+          const historyLines: ConsoleLine[] = data.lines.map((l: string) => ({
+            line: l,
+            timestamp: now,
+          }));
+          setLines((prev) => ({ ...prev, [serverId]: historyLines }));
         }
       }).catch(() => {});
     }
