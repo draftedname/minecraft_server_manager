@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -80,7 +80,7 @@ export default function ServerDashboard() {
     if (!socket.connected) socket.connect();
     const handler = (data: { serverId: string }) => {
       if (data.serverId === serverId) {
-        queryClient.invalidateQueries({ queryKey: ["server", serverId] });
+        queryClient.refetchQueries({ queryKey: ["server", serverId] });
       }
     };
     socket.on("server:status", handler);
@@ -113,7 +113,26 @@ export default function ServerDashboard() {
   const [editingRam, setEditingRam] = useState(false);
   const [ramInput, setRamInput] = useState(0);
   const [eulaOpen, setEulaOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startMsg, setStartMsg] = useState("Start");
+  const startingRef = useRef(starting);
+  startingRef.current = starting;
   const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!serverId) return;
+    const socket = getSocket();
+    if (!socket.connected) socket.connect();
+    const handler = (data: { message: string; current: number; total: number }) => {
+      if (startingRef.current) {
+        const pct = data.total > 1 ? ` (${Math.round(Math.min(data.current / data.total, 1) * 100)}%)`
+          : !data.message.includes("installed") ? "..." : "";
+        setStartMsg(data.message + pct);
+      }
+    };
+    socket.on("download:progress", handler);
+    return () => { socket.off("download:progress", handler); };
+  }, [serverId]);
 
   const renameMutation = useMutation({
     mutationFn: async (name: string) => {
@@ -153,16 +172,24 @@ export default function ServerDashboard() {
   });
 
   const handleAction = async (action: string) => {
+    if (action === "start") { setStarting(true); setStartMsg("Starting..."); }
     try {
       await api.post(`/servers/${serverId}/${action}`);
-      refetch();
+      await refetch();
     } catch (err: any) {
       const error = err.response?.data?.error || err.message;
       if (error === "EULA_NOT_ACCEPTED") {
+        toast({ title: "Minecraft EULA must be accepted before starting" });
         setEulaOpen(true);
+        setStarting(false);
+        setStartMsg("Start");
         return;
       }
-      toast({ title: "Action failed", description: error, variant: "destructive" });
+      toast({ title: `Start failed: ${error}`, description: JSON.stringify(err.response?.data || {}), variant: "destructive" });
+    } finally {
+      startingRef.current = false;
+      setStarting(false);
+      setStartMsg("Start");
     }
   };
 
@@ -224,9 +251,9 @@ export default function ServerDashboard() {
         </div>
         <div className="flex gap-2">
           {status === "stopped" || status === "crashed" ? (
-            <Button onClick={() => handleAction("start")}>
-              <Play className="h-4 w-4" />
-              Start
+            <Button onClick={() => handleAction("start")} disabled={starting}>
+              {starting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {startMsg}
             </Button>
           ) : status === "running" ? (
             <>

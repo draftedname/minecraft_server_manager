@@ -56,8 +56,8 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ["servers"] });
       queryClient.invalidateQueries({ queryKey: ["servers", "status"] });
     },
-    onError: () => {
-      toast({ title: "Action failed", variant: "destructive" });
+    onError: (err: any) => {
+      toast({ title: `Start failed: ${err.response?.data?.error || err.message}`, variant: "destructive" });
     },
   });
 
@@ -151,13 +151,18 @@ export default function Dashboard() {
                     <Button
                       size="sm"
                       className="w-full"
+                      disabled={actionMutation.isPending}
                       onClick={(e) => {
                         e.stopPropagation();
                         actionMutation.mutate({ id: server.config.id, action: "start" });
                       }}
                     >
-                      <Play className="h-3 w-3" />
-                      Start
+                      {actionMutation.isPending ? (
+                        <RefreshCw className="h-3 w-3 animate-spin mr-1" />
+                      ) : (
+                        <Play className="h-3 w-3 mr-1" />
+                      )}
+                      {actionMutation.isPending ? "Starting..." : "Start"}
                     </Button>
                   ) : status === "running" ? (
                     <>

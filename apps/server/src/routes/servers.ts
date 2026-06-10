@@ -134,7 +134,8 @@ router.get("/:id", (req: Request, res: Response) => {
 router.delete("/:id", asyncHandler(async (req: Request, res: Response) => {
   const id = p(req.params, "id");
 
-  if (getRunningServer(id)) {
+  const running = getRunningServer(id);
+  if (running && running.status !== "crashed") {
     res.status(400).json({ error: "Server is running. Stop it before deleting." });
     return;
   }
@@ -284,7 +285,8 @@ router.put("/:id/ram", asyncHandler(async (req: Request, res: Response) => {
     res.status(404).json({ error: "Server not found" });
     return;
   }
-  if (getRunningServer(id)) {
+  const running = getRunningServer(id);
+  if (running && running.status !== "crashed") {
     res.status(400).json({ error: "Server must be stopped to change RAM" });
     return;
   }

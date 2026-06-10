@@ -92,7 +92,7 @@ function getJavaVersionForGame(gameVersion: string): string {
 export async function startServer(id: string): Promise<{ success: boolean; error?: string }> {
   const config = loadServer(id);
   if (!config) return { success: false, error: "Server not found" };
-  if (runningServers.has(id) && runningServers.get(id)!.status !== "stopped") {
+  if (runningServers.has(id) && !["stopped", "crashed"].includes(runningServers.get(id)!.status)) {
     return { success: false, error: "Server already running" };
   }
 
@@ -103,20 +103,20 @@ export async function startServer(id: string): Promise<{ success: boolean; error
     return { success: false, error: "EULA_NOT_ACCEPTED" };
   }
 
-  // Auto-download Java if not installed
-  const javaInfo = checkJava();
+  // Auto-download Java if not installed (or too old)
+  const requiredJava = getJavaVersionForGame(config.gameVersion);
+  const javaInfo = checkJava(parseInt(requiredJava, 10));
   if (!javaInfo.installed) {
-    const version = getJavaVersionForGame(config.gameVersion);
     const io = getIO();
     const emit = (msg: string, current: number, total: number) => {
       io?.emit("download:progress", { message: msg, current, total });
     };
     emit("Installing Java...", 0, 100);
-    const result = await downloadJava(version, emit);
+    const result = await downloadJava(requiredJava, emit);
     if (!result.success || !result.path) {
       return {
         success: false,
-        error: `Java JDK ${version} is required. Download it from https://adoptium.net`,
+        error: `Java JDK ${requiredJava} is required. Download it from https://adoptium.net`,
       };
     }
     config.javaPath = result.path;
@@ -261,14 +261,13 @@ function handleProcess(id: string, config: import("@mcservergui/shared").ServerC
       clearTimeout(running.forceKillTimer);
       running.forceKillTimer = null;
     }
-    running.status = "stopped";
-    io?.emit("server:status", {
-      serverId: id,
-      status: code === 0 ? "stopped" : "crashed",
-      exitCode: code,
-    });
-    runningServers.delete(id);
-    onlinePlayers.delete(id);
+    const status = code === 0 ? "stopped" : "crashed";
+    running.status = status;
+    io?.emit("server:status", { serverId: id, status, exitCode: code });
+    if (code === 0) {
+      runningServers.delete(id);
+      onlinePlayers.delete(id);
+    }
   });
 
   proc.on("error", (err) => {
