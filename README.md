@@ -1,4 +1,4 @@
-## CURRENTLY ONLY WORKS ON WINDOWS
+### CURRENTLY ONLY WORKS ON WINDOWS
 
 ##### PS: This is my absolute first time using github and trying to create an app that any user can use with no problems, so any feedback of any kind wether it's for the github page or the app itself is very welcome and appreciated. if you want direct and fast contact with me for some issue you found or advice you wanna give pm on discord (user: drafted_name) send a friend request if you can't pm me
 
