@@ -133,7 +133,7 @@ Output: `dist-electron/MC Server GUI Setup x.x.x.exe`
 
 ## Features
 
-- **Modpack installer** with 3-layer filtering (Modrinth API, blacklist, JAR inspection) to skip client-only mods
+- ****VERY BROKEN CURRENTLY**** **Modpack installer** with 3-layer filtering (Modrinth API, blacklist, JAR inspection) to skip client-only mods 
 - **Log analysis** via mclo.gs, detects crashes, mod conflicts, and common problems
 - **Modrinth browser**  search and install mods directly from the app
 - **Fabric loader version selection** for modpacks and Fabric servers
@@ -142,7 +142,6 @@ Output: `dist-electron/MC Server GUI Setup x.x.x.exe`
 - **File browser** with text editor integration
 - **Playit.gg tunneling** for public access without port forwarding
 - **Auto-Java download** if not found on the system
-- **RAM allocation** with instant apply
 
 ---
 
