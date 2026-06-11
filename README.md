@@ -34,8 +34,8 @@ A standalone desktop application for managing Minecraft servers no command line,
 
 ### Making Your Server Public (no port forwarding)
 
-1. Download (Playit.gg)[https://playit.gg/download] and open it (from the desktop or on the start menu)
-2. (Create your account)[https://playit.gg/login/create] and make sure that you verify it from you email
+1. Download ([Playit.gg](https://playit.gg/download) and open it (from the desktop or on the start menu)
+2. [Create your account](https://playit.gg/login/create) and make sure that you verify it from you email
 3. On the "Where do you want to integrate Playit?" screen click on computer
 4. Copy the link shown on the command prompt (e.g. https://playit.gg/claim/123abcd) (use ctrl+c)
 5. Paste it in the text box and click "Validate & Continue", it will take a bit of time so don't worry
@@ -44,7 +44,7 @@ A standalone desktop application for managing Minecraft servers no command line,
 8. Click on "Create a Tunnel"
 9. Give it a name click next then choose "Minecraft Java" as a Tunnel Type and click next
 10. Click "Next"
-11. To find the Local IP part follow this (tutorial)[https://www.whatismybrowser.com/detect/what-is-my-local-ip-address/] or this (short tutorial)[https://www.youtube.com/shorts/nSDnDa-1ofc] (nor the video or the blog are mine)
+11. To find the Local IP part follow this [tutorial](https://www.whatismybrowser.com/detect/what-is-my-local-ip-address/) or this [short tutorial](https://www.youtube.com/shorts/nSDnDa-1ofc) (nor the video or the blog are mine)
 12. After finding the IP copy it then put it on the Local IP text box (the 1st one) 
 13. Click "Next" then "Create Tunnel"
 14. It's gonna show that it's allocating your address, just wait a bit then when it shows up, copy it and give it to your friends
