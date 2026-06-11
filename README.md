@@ -52,10 +52,11 @@ A standalone desktop application for managing Minecraft servers no command line,
 
 #### Troubleshooting
 
-Currently i have no idea what to troubleshoot other than playit.gg not working on the app so here is the duct tape fix until i actually fix the code:
+Currently i have no idea what to troubleshoot other than playit.gg not working on the app and just showing the tutorial so here is the duct tape fix until i actually fix the code:
 1. Close Playit.gg interface and command prompt
 2. Close MC Server Manager and then reopen it
-
+3. Switch ON "Use Playit.gg instead"
+it should work flawlessly now
 
 ### Changing the Web UI Port
 
