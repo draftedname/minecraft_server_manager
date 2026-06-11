@@ -52,7 +52,7 @@ A standalone desktop application for managing Minecraft servers no command line,
 14. It's gonna show that it's allocating your address, just wait a bit then when it shows up, copy it and give it to your friends
 15. On the MC Server Manager, go to your server's dashboard then switch on "Use Playit.gg instead" (P.S: The server HAS to be ON/already started)
 
-#### Troubleshooting
+### Troubleshooting
 
 Currently i have no idea what to troubleshoot other than playit.gg not working on the app and just showing the tutorial so here is the duct tape fix until i actually fix the code:
 1. Close Playit.gg interface and command prompt
