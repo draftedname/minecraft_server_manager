@@ -127,17 +127,17 @@ Output: `dist-electron/MC Server GUI Setup x.x.x.exe`
 
 ## ⚠️ Known Issues
 
-**Modpacks are currently in a broken state.** The mod filtering system may install client-only mods or skip server-required mods. Some modpacks may not work at all. This is being actively worked on — expect improvements in future updates.
+**Modpacks are currently in a broken state.** The mod filtering system may install client-only mods or skip server-required mods. Some modpacks may not work at all. This is being actively worked on. Expect improvements in future updates.
 
 ---
 
 ## Features
 
 - **Modpack installer** with 3-layer filtering (Modrinth API, blacklist, JAR inspection) to skip client-only mods
-- **Log analysis** via mclo.gs — detects crashes, mod conflicts, and common problems
-- **Modrinth browser** — search and install mods directly from the app
+- **Log analysis** via mclo.gs, detects crashes, mod conflicts, and common problems
+- **Modrinth browser**  search and install mods directly from the app
 - **Fabric loader version selection** for modpacks and Fabric servers
-- **World management** — import, backup (local + Google Drive), restore, activate, and delete
+- **World management**  import, backup (local + Google Drive), restore, activate, and delete
 - **Console** with color-coded output, filtering, search, and mclo.gs analysis
 - **File browser** with text editor integration
 - **Playit.gg tunneling** for public access without port forwarding
