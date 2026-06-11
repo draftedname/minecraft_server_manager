@@ -57,6 +57,10 @@ Currently i have no idea what to troubleshoot other than playit.gg not working o
 2. Close MC Server Manager and then reopen it
 3. Switch ON "Use Playit.gg instead"
 it should work flawlessly now
+##### Alternative Fix
+1. Open Task Manager (ctrl+shift+esc) and go to services
+2. Search for "playitd" service and stop the service
+3. Switch ON "Use Playit.gg instead"
 
 ### Changing the Web UI Port
 
