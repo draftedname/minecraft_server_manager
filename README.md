@@ -75,8 +75,6 @@ MC Server GUI.exe
 
 ## Getting Started: Developers
 
-me and some ai :3 (all bugs and tests and security stuff are handled by me)
-
 ### Prerequisites
 
 - Node.js 18+ ([nodejs.org](https://nodejs.org))
