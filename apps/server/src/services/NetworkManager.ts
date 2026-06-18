@@ -17,15 +17,45 @@ function isWindows(): boolean {
 }
 
 function scQuery(): { exists: boolean; running: boolean; error?: string } {
+  // Primary: sc query
   try {
     const result = spawnSync("sc", ["query", "playitd"], { encoding: "utf-8", stdio: "pipe", windowsHide: true });
     if (result.error) {
-      return { exists: false, running: false, error: `sc command failed: ${result.error.message}` };
+      // sc command not available, fall through to fallbacks
+    } else if (result.stdout?.includes("RUNNING")) {
+      return { exists: true, running: true };
+    } else if (result.stdout?.includes("STATE")) {
+      return { exists: true, running: false };
     }
-    return { exists: true, running: result.stdout?.includes("RUNNING") ?? false };
-  } catch (err: any) {
-    return { exists: false, running: false, error: `sc command not available: ${err.message}` };
-  }
+  } catch {}
+
+  // Fallback 1: PowerShell Get-Service
+  try {
+    const ps = spawnSync("powershell", [
+      "-NoProfile", "-Command",
+      "Get-Service -Name playitd -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Status"
+    ], { encoding: "utf-8", stdio: "pipe", windowsHide: true });
+    if (!ps.error) {
+      const status = ps.stdout?.trim();
+      if (status === "Running") {
+        return { exists: true, running: true };
+      }
+      if (status) {
+        return { exists: true, running: false };
+      }
+    }
+  } catch {}
+
+  // Fallback 2: tasklist
+  try {
+    const tl = spawnSync("tasklist", ["/FI", "IMAGENAME eq playitd.exe"], { encoding: "utf-8", stdio: "pipe", windowsHide: true });
+    if (!tl.error && tl.stdout?.includes("playitd.exe")) {
+      return { exists: true, running: true };
+    }
+  } catch {}
+
+  console.error("playitd detection failed: all methods (sc, powershell, tasklist) could not detect playitd");
+  return { exists: false, running: false };
 }
 
 function scStart(): { success: boolean; error?: string } {

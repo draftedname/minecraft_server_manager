@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Settings, Save, Loader2 } from "lucide-react";
+import { Settings, Save, Loader2, Search } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,7 @@ export default function SettingsPage() {
   const [localProps, setLocalProps] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
   const initialLoadDone = useRef(false);
+  const [search, setSearch] = useState("");
 
   const { data, isLoading } = useQuery<{
     properties: Record<string, string>;
@@ -127,6 +128,16 @@ export default function SettingsPage() {
       </div>
 
       <div className="flex-1 overflow-auto p-6">
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search settings..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+
         <Tabs defaultValue={categories[0]?.key} className="w-full">
           <TabsList className="mb-4">
             {categories.map((cat) => (
@@ -139,6 +150,7 @@ export default function SettingsPage() {
           {categories.map((cat) => {
             const propsInCategory = Object.entries(definitions)
               .filter(([, def]) => def.category === cat.key)
+              .filter(([key]) => !search || key.toLowerCase().includes(search.toLowerCase()))
               .sort(([a], [b]) => a.localeCompare(b));
 
             return (

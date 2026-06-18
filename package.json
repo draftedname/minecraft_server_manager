@@ -41,11 +41,17 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "runAfterFinish": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "draftedname",
+      "repo": "minecraft_server_manager"
     }
   },
   "dependencies": {
     "archiver": "^7.0.1",
     "cors": "^2.8.5",
+    "electron-updater": "^6.8.9",
     "express": "^5.1.0",
     "extract-zip": "^2.0.1",
     "googleapis": "^146.0.0",

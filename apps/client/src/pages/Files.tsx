@@ -14,6 +14,7 @@ import {
   Globe,
   Search,
   Edit2,
+  RefreshCw,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -159,12 +160,14 @@ export default function Files() {
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                const dest = currentPath || "";
-                const ok = await upload(file, dest);
-                if (ok) {
-                  toast({ title: `Uploaded ${file.name}` });
-                  queryClient.invalidateQueries({ queryKey: ["server", serverId, "files", currentPath] });
-                }
+                await upload(file, "", async (uploadPath: string) => {
+                  await api.post(`/servers/${serverId}/files/copy-from-upload`, {
+                    uploadPath,
+                    filename: file.name,
+                  });
+                  queryClient.invalidateQueries({ queryKey: ["server", serverId, "files"] });
+                  toast({ title: "File uploaded" });
+                });
                 if (e.target) e.target.value = "";
               }}
           />
@@ -183,6 +186,28 @@ export default function Files() {
               Upload
             </Button>
           </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => queryClient.invalidateQueries({ queryKey: ["server", serverId, "files"] })}
+          >
+            <RefreshCw className="h-4 w-4 mr-1" />
+            Refresh
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              try {
+                await api.post(`/servers/${serverId}/files/open`, { relpath: currentPath || "" });
+              } catch (err: any) {
+                toast({ title: "Failed to open in Explorer", description: err.response?.data?.error || err.message, variant: "destructive" });
+              }
+            }}
+          >
+            <FolderOpen className="h-4 w-4 mr-1" />
+            Open in Explorer
+          </Button>
         </div>
       </div>
 

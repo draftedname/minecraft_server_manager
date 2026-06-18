@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import path from "path";
-import { readdirSync, statSync, existsSync, renameSync, unlinkSync, writeFileSync, readFileSync } from "fs";
+import { readdirSync, statSync, existsSync, renameSync, unlinkSync, writeFileSync, readFileSync, copyFileSync, mkdirSync } from "fs";
 import { loadServer, getServerDir } from "../services/DataStore.js";
 import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
 import {
@@ -32,19 +32,22 @@ router.get("/:serverId/mods", (req: Request, res: Response) => {
     return;
   }
 
+  const meta = loadModMeta(serverId);
   const files = readdirSync(modsDir);
   const mods: ModInfo[] = files
     .filter((f) => f.endsWith(".jar") || f.endsWith(".jar.disabled"))
     .map((f) => {
       const filePath = path.join(modsDir, f);
       const stat = statSync(filePath);
+      const filenameBase = f.replace(/\.disabled$/, "");
+      const modMeta = meta[f] || meta[filenameBase];
       return {
         filename: f,
         size: stat.size,
         enabled: f.endsWith(".jar"),
-        modrinthId: null,
+        modrinthId: modMeta?.projectId || null,
         name: f.replace(/\.jar(\.disabled)?$/, ""),
-        version: null,
+        version: modMeta?.versionNumber || null,
       };
     });
 
@@ -339,6 +342,44 @@ router.delete("/:serverId/mods/:filename", (req: Request, res: Response) => {
   writeFileSync(metaPath, JSON.stringify(allMeta, null, 2), "utf-8");
 
   res.json({ success: true, deleted: deleted[0] });
+});
+
+router.post("/:serverId/mods/copy-from-upload", (req: Request, res: Response) => {
+  const serverId = p(req.params, "serverId");
+  const server = loadServer(serverId);
+  if (!server) {
+    res.status(404).json({ error: "Server not found" });
+    return;
+  }
+
+  const { path: uploadPath, filename } = req.body as { path: string; filename: string };
+  if (!uploadPath || !filename) {
+    res.status(400).json({ error: "path and filename are required" });
+    return;
+  }
+
+  const modsDir = path.join(getServerDir(serverId), "mods");
+  if (!existsSync(modsDir)) mkdirSync(modsDir, { recursive: true });
+
+  let dest: string;
+  try {
+    dest = safeJoin(modsDir, filename);
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    throw err;
+  }
+
+  if (!existsSync(uploadPath)) {
+    res.status(400).json({ error: "Upload file not found" });
+    return;
+  }
+
+  copyFileSync(uploadPath, dest);
+  unlinkSync(uploadPath);
+  res.json({ success: true, filename });
 });
 
 export { router as modsRouter };

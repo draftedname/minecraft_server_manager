@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -15,8 +15,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowUp,
+  CheckCircle,
+  Upload,
 } from "lucide-react";
 import api from "@/lib/api";
+import { useChunkedUpload } from "@/hooks/useChunkedUpload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -98,7 +101,16 @@ export default function Mods() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [page, setPage] = useState(0);
   const [modSearch, setModSearch] = useState("");
+  const [filterVersion, setFilterVersion] = useState("");
   const PAGE_SIZE = 20;
+
+  const { data: gameVersions } = useQuery<string[]>({
+    queryKey: ["versions", "vanilla"],
+    queryFn: async () => {
+      const { data } = await api.get("/versions/vanilla");
+      return data;
+    },
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => setSearchQuery(searchInput), 300);
@@ -159,14 +171,15 @@ export default function Mods() {
   const gameVersion = server?.gameVersion;
 
   const { data: searchResults, isLoading: searching } = useQuery<{ hits: ModrinthProject[]; total_hits: number }>({
-    queryKey: ["modrinth", "search", searchQuery, loaderFilter, gameVersion, serverSideOnly, sort, selectedCategories, page],
+    queryKey: ["modrinth", "search", searchQuery, loaderFilter, gameVersion, serverSideOnly, sort, selectedCategories, page, server?.type, filterVersion],
     queryFn: async () => {
       const params: any = {
         q: searchQuery,
         loader: loaderFilter,
-        version: gameVersion,
+        version: filterVersion || gameVersion || undefined,
         sort,
         offset: page * PAGE_SIZE,
+        projectType: server?.type === "vanilla" ? "datapack" : undefined,
       };
       if (!serverSideOnly) params.serverSide = "false";
       if (selectedCategories.length > 0) params.categories = selectedCategories.join(",");
@@ -299,6 +312,31 @@ export default function Mods() {
     },
   });
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { uploading: isUploading, progress: uploadProgress, upload } = useChunkedUpload();
+
+  const uploadMod = async (file: File) => {
+    const ok = await upload(file, "", async (uploadPath: string) => {
+      try {
+        await api.post(`/servers/${serverId}/mods/copy-from-upload`, {
+          path: uploadPath,
+          filename: file.name,
+        });
+        toast({ title: "Mod uploaded" });
+        queryClient.invalidateQueries({ queryKey: ["server", serverId, "mods"] });
+      } catch (err: any) {
+        toast({ title: "Upload failed", description: err.response?.data?.error || err.message, variant: "destructive" });
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    });
+  };
+
+  const handleModFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) uploadMod(file);
+  };
+
   const toggleCategory = (cat: string) => {
     setSelectedCategories((prev) =>
       prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
@@ -327,6 +365,14 @@ export default function Mods() {
       </div>
 
       <div className="flex-1 overflow-auto p-6">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".jar"
+          className="hidden"
+          onChange={handleModFileSelect}
+        />
+
         <Tabs defaultValue="installed">
           <TabsList className="mb-4">
             <TabsTrigger value="installed">Installed</TabsTrigger>
@@ -385,6 +431,21 @@ export default function Mods() {
                           <Download className="h-3 w-3 mr-1" />
                         )}
                         Update All
+                      </Button>
+                    </span>
+                    <span title={isRunning ? "Stop the server first" : ""}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploading || isRunning}
+                      >
+                        {isUploading ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : (
+                          <Upload className="h-3 w-3 mr-1" />
+                        )}
+                        {isUploading ? `Uploading ${uploadProgress}%` : "Upload Mod"}
                       </Button>
                     </span>
                   </div>
@@ -506,6 +567,20 @@ export default function Mods() {
                   </Select>
                 </div>
 
+                <div className="flex items-center gap-2">
+                  <Select value={filterVersion} onValueChange={setFilterVersion}>
+                    <SelectTrigger className="h-7 w-36 text-xs">
+                      <SelectValue placeholder={gameVersion || "Any version"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Any version</SelectItem>
+                      {gameVersions?.map((v) => (
+                        <SelectItem key={v} value={v}>{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {loaderFilter && <Badge variant="outline">{loaderFilter}</Badge>}
                 {gameVersion && <Badge variant="outline">{gameVersion}</Badge>}
               </div>
@@ -571,16 +646,25 @@ export default function Mods() {
                             </Badge>
                           </div>
                         </div>
-                        <span title={isRunning ? "Stop the server first" : ""}>
-                          <Button
-                            size="sm"
-                            onClick={() => handleInstallClick(project)}
-                            disabled={isRunning}
-                          >
-                            <Download className="h-3 w-3 mr-1" />
-                            Install
-                          </Button>
-                        </span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {mods?.some((m) => m.modrinthId === project.project_id) ? (
+                            <Badge variant="success" className="gap-1">
+                              <CheckCircle className="h-3 w-3" />
+                              Installed
+                            </Badge>
+                          ) : (
+                            <span title={isRunning ? "Stop the server first" : ""}>
+                              <Button
+                                size="sm"
+                                onClick={() => handleInstallClick(project)}
+                                disabled={isRunning}
+                              >
+                                <Download className="h-3 w-3 mr-1" />
+                                Install
+                              </Button>
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>

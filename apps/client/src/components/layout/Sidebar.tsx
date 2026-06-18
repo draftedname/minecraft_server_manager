@@ -1,4 +1,4 @@
-import { NavLink, useParams, useNavigate } from "react-router-dom";
+import { NavLink, useParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   HardDrive,
@@ -38,6 +38,18 @@ function getNavTo(item: typeof navItems[0], serverId?: string): string {
 export default function Sidebar() {
   const { serverId } = useParams<{ serverId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const { data } = useQuery<{ config: ServerConfig }>({
+    queryKey: ["server", serverId],
+    queryFn: async () => {
+      const { data } = await api.get(`/servers/${serverId}`);
+      return data;
+    },
+    enabled: !!serverId,
+  });
+
+  const isVanilla = data?.config?.type === "vanilla";
 
   const { data: servers } = useQuery<ServerConfig[]>({
     queryKey: ["servers"],
@@ -89,9 +101,11 @@ export default function Sidebar() {
 
       <nav className="flex flex-1 flex-col gap-1 p-2">
         {navItems.map((item) => {
+          const label = item.to === "mods" && isVanilla ? "Datapacks" : item.label;
           const isExact = item.exact;
           const to = getNavTo(item, serverId);
           if (!serverId && !item.exact) return null;
+          if (item.exact && location.pathname === "/") return null;
 
           return (
             <NavLink
@@ -107,7 +121,7 @@ export default function Sidebar() {
               }
             >
               <item.icon className="h-4 w-4" />
-              {item.label}
+              {label}
             </NavLink>
           );
         })}

@@ -43,12 +43,12 @@ const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: /^https?:\/\/localhost(:\d+)?$/,
+    origin: /^https?:\/\/(?:localhost|127\.0\.0\.1)(:\d+)?$/,
     methods: ["GET", "POST"],
   },
 });
 
-app.use(cors({ origin: /^https?:\/\/localhost(:\d+)?$/ }));
+app.use(cors({ origin: /^https?:\/\/(?:localhost|127\.0\.0\.1)(:\d+)?$/ }));
 
 // NOTE: API endpoints have no authentication. This app is designed for
 // LAN/localhost use. Anyone who can reach the app's port can control servers,
@@ -95,7 +95,7 @@ setupWebSocket(io);
 // Module guard: only auto-listen when this file is the entry point
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename)) {
   const PORT = parseInt(process.env.MCSERVERGUI_WEB_PORT || "3456", 10);
-  httpServer.listen(PORT, () => {
+  httpServer.listen(PORT, "127.0.0.1", () => {
     console.log(`MC Server GUI backend running on http://localhost:${PORT}`);
     startScheduler();
   });

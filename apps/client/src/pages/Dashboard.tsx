@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Play, Square, RefreshCw, Trash2 } from "lucide-react";
+import { Plus, Play, Square, RefreshCw, Trash2, Settings } from "lucide-react";
 import api from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,8 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [eulaOpen, setEulaOpen] = useState(false);
+  const [eulaServerId, setEulaServerId] = useState<string | null>(null);
 
   const { data: servers, isLoading } = useQuery<ServerInfo[]>({
     queryKey: ["servers", "status"],
@@ -56,8 +58,15 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ["servers"] });
       queryClient.invalidateQueries({ queryKey: ["servers", "status"] });
     },
-    onError: (err: any) => {
-      toast({ title: `Start failed: ${err.response?.data?.error || err.message}`, variant: "destructive" });
+    onError: (err: any, variables: { id: string; action: string }) => {
+      const error = err.response?.data?.error || err.message;
+      if (error === "EULA_NOT_ACCEPTED") {
+        setEulaServerId(variables.id);
+        toast({ title: "Minecraft EULA must be accepted before starting" });
+        setEulaOpen(true);
+        return;
+      }
+      toast({ title: `Start failed: ${error}`, variant: "destructive" });
     },
   });
 
@@ -119,7 +128,7 @@ export default function Dashboard() {
             <Card
               key={server.config.id}
               className="cursor-pointer transition-colors hover:bg-card/60"
-              onClick={() => navigate(`/${server.config.id}/console`)}
+              onClick={() => navigate(`/${server.config.id}`)}
             >
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-base">{server.config.name}</CardTitle>
@@ -200,6 +209,16 @@ export default function Dashboard() {
                   <Button
                     size="sm"
                     variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/${server.config.id}/settings`);
+                    }}
+                  >
+                    <Settings className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
                     className="text-destructive hover:text-destructive"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -214,6 +233,21 @@ export default function Dashboard() {
           );
         })}
       </div>
+
+      <ConfirmDialog
+        open={eulaOpen}
+        title="Minecraft EULA"
+        description="By starting this server, you accept the Minecraft End User License Agreement (EULA). Read it at https://aka.ms/MinecraftEULA."
+        confirmLabel="Accept & Start"
+        onConfirm={async () => {
+          if (eulaServerId) {
+            await api.post(`/servers/${eulaServerId}/eula/accept`);
+            setEulaOpen(false);
+            actionMutation.mutate({ id: eulaServerId, action: "start" });
+          }
+        }}
+        onCancel={() => setEulaOpen(false)}
+      />
 
       <ConfirmDialog
         open={!!pendingDelete}

@@ -80,7 +80,7 @@ const SERVER_TYPES = [
 
 export default function NewServer() {
   const navigate = useNavigate();
-  const [name, setName] = useState("");
+  const [name, setName] = useState("My Server");
   const [serverType, setServerType] = useState<"vanilla" | "fabric" | "modpack">("vanilla");
   const [gameVersion, setGameVersion] = useState("");
   const [loaderVersion, setLoaderVersion] = useState("");

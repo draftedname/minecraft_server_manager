@@ -405,8 +405,8 @@ export default function ServerDashboard() {
               <CardContent className="flex items-center gap-3 p-4">
                 <Package className="h-5 w-5 text-primary" />
                 <div>
-                  <p className="font-medium">Mods</p>
-                  <p className="text-xs text-muted-foreground">Manage mods</p>
+                  <p className="font-medium">{config.type === "vanilla" ? "Datapacks" : "Mods"}</p>
+                  <p className="text-xs text-muted-foreground">{config.type === "vanilla" ? "Manage datapacks" : "Manage mods"}</p>
                 </div>
               </CardContent>
             </Card>

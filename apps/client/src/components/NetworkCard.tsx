@@ -141,15 +141,17 @@ export default function NetworkCard({ isRunning }: { isRunning: boolean }) {
                 {netState.enabled ? "Server is publicly accessible" : "if you can't portforward"}
               </CardDescription>
             </div>
-            <Switch
-              checked={netState.enabled}
-              onCheckedChange={(v) => {
-                if (!isRunning) return;
-                if (v) enableMutation.mutate();
-                else disableMutation.mutate();
-              }}
-              disabled={!isRunning || enableMutation.isPending || disableMutation.isPending}
-            />
+            <span title={!isRunning ? "Only available when the server is running" : ""}>
+              <Switch
+                checked={netState.enabled}
+                onCheckedChange={(v) => {
+                  if (!isRunning) return;
+                  if (v) enableMutation.mutate();
+                  else disableMutation.mutate();
+                }}
+                disabled={!isRunning || enableMutation.isPending || disableMutation.isPending}
+              />
+            </span>
           </div>
         </CardHeader>
 

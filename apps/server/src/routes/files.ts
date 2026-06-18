@@ -7,6 +7,8 @@ import {
   unlinkSync,
   rmdirSync,
   createReadStream,
+  copyFileSync,
+  mkdirSync,
 } from "fs";
 import { loadServer, getServerDir } from "../services/DataStore.js";
 import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
@@ -212,9 +214,43 @@ router.post("/:serverId/files/open", asyncHandler(async (req: Request, res: Resp
   res.json({ success: true });
 }));
 
-// Upload file
-router.post("/:serverId/files/upload", (req: Request, res: Response) => {
-  res.status(501).json({ error: "Upload not yet implemented" });
+// Copy uploaded file to server directory
+router.post("/:serverId/files/copy-from-upload", (req: Request, res: Response) => {
+  const serverId = p(req.params, "serverId");
+  const server = loadServer(serverId);
+  if (!server) { res.status(404).json({ error: "Server not found" }); return; }
+
+  const { uploadPath, filename } = req.body;
+  if (!uploadPath || !filename) {
+    res.status(400).json({ error: "uploadPath and filename are required" });
+    return;
+  }
+
+  const serverDir = getServerDir(serverId);
+  let destPath: string;
+  try {
+    destPath = safeJoin(serverDir, filename);
+  } catch (err) {
+    if (err instanceof PathTraversalError) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    throw err;
+  }
+
+  try {
+    const destDir = path.dirname(destPath);
+    if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+    if (!existsSync(uploadPath)) {
+      res.status(404).json({ error: "Uploaded file not found" });
+      return;
+    }
+    copyFileSync(uploadPath, destPath);
+    unlinkSync(uploadPath);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export { router as filesRouter };
