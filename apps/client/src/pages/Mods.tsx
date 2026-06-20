@@ -176,7 +176,7 @@ export default function Mods() {
       const params: any = {
         q: searchQuery,
         loader: loaderFilter,
-        version: filterVersion || gameVersion || undefined,
+        version: filterVersion === "__any__" ? undefined : (filterVersion || gameVersion || undefined),
         sort,
         offset: page * PAGE_SIZE,
         projectType: server?.type === "vanilla" ? "datapack" : undefined,
@@ -573,7 +573,7 @@ export default function Mods() {
                       <SelectValue placeholder={gameVersion || "Any version"} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Any version</SelectItem>
+                      <SelectItem value="__any__">Any version</SelectItem>
                       {gameVersions?.map((v) => (
                         <SelectItem key={v} value={v}>{v}</SelectItem>
                       ))}
