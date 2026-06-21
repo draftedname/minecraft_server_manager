@@ -74,7 +74,8 @@ export default function DriveSettings() {
   const authMutation = useMutation({
     mutationFn: async () => {
       const { data } = await api.get("/drive/auth-url");
-      window.open(data.url, "_blank");
+      const { data: { ticket } } = await api.get("/auth/ticket");
+      window.open(`${data.url}&ticket=${ticket}`, "_blank");
     },
     onSuccess: () => {
       if (authTimerRef.current) clearTimeout(authTimerRef.current);
@@ -274,8 +275,9 @@ export default function DriveSettings() {
                             <Button
                               size="icon"
                               variant="ghost"
-                              onClick={() => {
-                                window.open(`/api/drive/backups/${b.id}/download`, "_blank");
+                              onClick={async () => {
+                                const { data: { ticket } } = await api.get("/auth/ticket");
+                                window.open(`/api/drive/backups/${b.id}/download?ticket=${ticket}`, "_blank");
                               }}
                             >
                               <Download className="h-4 w-4" />

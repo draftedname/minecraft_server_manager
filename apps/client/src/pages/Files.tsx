@@ -116,8 +116,9 @@ export default function Files() {
     setPendingDelete({ path: entry.path, name: entry.name, isDir: entry.type === "directory" });
   };
 
-  const handleDownload = (entry: FileEntry) => {
-    window.open(`/api/servers/${serverId}/files/download?relpath=${encodeURIComponent(entry.path)}`, "_blank");
+  const handleDownload = async (entry: FileEntry) => {
+    const { data: { ticket } } = await api.get("/auth/ticket");
+    window.open(`/api/servers/${serverId}/files/download?relpath=${encodeURIComponent(entry.path)}&ticket=${ticket}`, "_blank");
   };
 
   const navigateTo = (dir: FileEntry) => {
@@ -160,10 +161,11 @@ export default function Files() {
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                await upload(file, "", async (uploadPath: string) => {
+                await upload(file, "", async (uploadId: string) => {
                   await api.post(`/servers/${serverId}/files/copy-from-upload`, {
-                    uploadPath,
+                    uploadId,
                     filename: file.name,
+                    relpath: currentPath || "",
                   });
                   queryClient.invalidateQueries({ queryKey: ["server", serverId, "files"] });
                   toast({ title: "File uploaded" });

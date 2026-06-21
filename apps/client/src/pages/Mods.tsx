@@ -129,7 +129,7 @@ export default function Mods() {
   const { data: updatesData } = useQuery({
     queryKey: ["server", serverId, "mods", "updates"],
     queryFn: async () => {
-      const { data } = await api.post(`/servers/${serverId}/mods/check-updates`);
+      const { data } = await api.get(`/servers/${serverId}/mods/check-updates`);
       return data;
     },
     enabled: !!serverId,
@@ -252,7 +252,7 @@ export default function Mods() {
 
   const checkUpdatesMutation = useMutation({
     mutationFn: async () => {
-      const { data } = await api.post(`/servers/${serverId}/mods/check-updates`);
+      const { data } = await api.get(`/servers/${serverId}/mods/check-updates`);
       return data;
     },
     onSuccess: (data: any) => {
@@ -316,10 +316,10 @@ export default function Mods() {
   const { uploading: isUploading, progress: uploadProgress, upload } = useChunkedUpload();
 
   const uploadMod = async (file: File) => {
-    const ok = await upload(file, "", async (uploadPath: string) => {
+    const ok = await upload(file, "", async (uploadId: string) => {
       try {
         await api.post(`/servers/${serverId}/mods/copy-from-upload`, {
-          path: uploadPath,
+          uploadId,
           filename: file.name,
         });
         toast({ title: "Mod uploaded" });

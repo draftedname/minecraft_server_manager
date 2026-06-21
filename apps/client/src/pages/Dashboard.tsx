@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Play, Square, RefreshCw, Trash2, Settings } from "lucide-react";
+import { Plus, Play, Square, RefreshCw, Trash2, Settings, Copy } from "lucide-react";
 import api from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,6 +35,19 @@ export default function Dashboard() {
     socket.on("server:status", handler);
     return () => { socket.off("server:status", handler); };
   }, [queryClient]);
+
+  const cloneMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.post(`/servers/${id}/clone`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["servers", "status"] });
+      toast({ title: "Server cloned" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Clone failed", description: err.response?.data?.error || err.message, variant: "destructive" });
+    },
+  });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -121,7 +134,7 @@ export default function Dashboard() {
         </Button>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {servers.map((server) => {
+        {servers.map((server, index) => {
           const status = server.status || "stopped";
 
           return (
@@ -215,6 +228,16 @@ export default function Dashboard() {
                     }}
                   >
                     <Settings className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      cloneMutation.mutate(server.config.id);
+                    }}
+                  >
+                    <Copy className="h-3 w-3" />
                   </Button>
                   <Button
                     size="sm"

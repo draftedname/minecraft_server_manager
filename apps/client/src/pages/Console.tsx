@@ -14,38 +14,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/toaster";
-import { useConsoleContext } from "@/hooks/consoleContext";
+import { useConsoleContext, type ConsoleLine } from "@/hooks/consoleContext";
 import type { ServerConfig } from "@mcservergui/shared";
 
 type FilterMode = "all" | "important" | "chat" | "errors";
-
-const CHAT_PATTERN = /^<\w+>/;
-const ERROR_PATTERN = /\b(?:ERROR|FATAL|Exception|Caused by|FAILED)\b/;
-const WARN_PATTERN = /\bWARN(?:ING)?\b/;
-const JOIN_PATTERN = /\b(?:joined the game|logged in)\b/;
-const LEAVE_PATTERN = /\b(?:left the game|disconnected|lost connection)\b/;
-const ACHIEVEMENT_PATTERN = /\bhas (?:made the advancement|completed the challenge)\b/;
-const DEATH_PATTERN = /\b(?:was slain|drowned|blew up|burned to death|fell from|hit the ground|starved to death|suffocated|withered away|froze to death|was killed|went up in flames|walked into|experienced kinetic|was squashed|was impaled|was fireballed|was stung|was pummeled|was shot|died)\b/;
-const INFO_PATTERN = /^\[.*?\/INFO\]/;
-
-function stripFormatting(line: string) {
-  return line.replace(/\u001b\[[0-9;]*m/g, "");
-}
-
-function classifyLine(text: string): {
-  type: "chat" | "error" | "warn" | "join" | "leave" | "achievement" | "death" | "info" | "normal";
-  color: string;
-} {
-  if (CHAT_PATTERN.test(text)) return { type: "chat", color: "text-cyan-400" };
-  if (ERROR_PATTERN.test(text)) return { type: "error", color: "text-red-400" };
-  if (WARN_PATTERN.test(text)) return { type: "warn", color: "text-yellow-400" };
-  if (ACHIEVEMENT_PATTERN.test(text)) return { type: "achievement", color: "text-purple-400" };
-  if (JOIN_PATTERN.test(text)) return { type: "join", color: "text-green-400" };
-  if (LEAVE_PATTERN.test(text)) return { type: "leave", color: "text-orange-400" };
-  if (DEATH_PATTERN.test(text)) return { type: "death", color: "text-red-300" };
-  if (INFO_PATTERN.test(text)) return { type: "info", color: "text-gray-500" };
-  return { type: "normal", color: "text-gray-300" };
-}
 
 export default function Console() {
   const { serverId } = useParams<{ serverId: string }>();
@@ -134,16 +106,14 @@ export default function Console() {
 
   const filteredLines = useMemo(() => {
     if (filterMode === "all") return lines;
-    return lines.filter((entry) => {
-      const text = stripFormatting(entry.line);
-      const cls = classifyLine(text);
+    return lines.filter((entry: ConsoleLine) => {
       switch (filterMode) {
         case "important":
-          return cls.type !== "info";
+          return entry.type !== "info";
         case "chat":
-          return cls.type === "chat";
+          return entry.type === "chat";
         case "errors":
-          return cls.type === "error" || cls.type === "warn";
+          return entry.type === "error" || entry.type === "warn";
         default:
           return true;
       }
@@ -304,17 +274,15 @@ export default function Console() {
             >
               {virtualizer.getVirtualItems().map((vi) => {
                 const entry = filteredLines[vi.index];
-                const text = stripFormatting(entry.line);
-                const cls = classifyLine(text);
                 return (
                   <div
                     key={vi.key}
                     data-index={vi.index}
                     ref={virtualizer.measureElement}
-                    className={`absolute top-0 left-0 w-full whitespace-pre-wrap break-all leading-5 ${cls.color}`}
+                    className={`absolute top-0 left-0 w-full whitespace-pre-wrap break-all leading-5 ${entry.color}`}
                     style={{ transform: `translateY(${vi.start}px)` }}
                   >
-                    {text}
+                    {entry.text}
                   </div>
                 );
               })}

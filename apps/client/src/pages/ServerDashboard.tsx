@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import NetworkCard from "@/components/NetworkCard";
@@ -149,6 +150,69 @@ export default function ServerDashboard() {
     },
   });
 
+  const [versionDialogOpen, setVersionDialogOpen] = useState(false);
+  const [targetVersion, setTargetVersion] = useState("");
+  const [targetLoaderVersion, setTargetLoaderVersion] = useState("");
+  const [preflightResult, setPreflightResult] = useState<any>(null);
+  const [incompatibleAction, setIncompatibleAction] = useState<"disable" | "delete">("disable");
+
+  const updateVersionMutation = useMutation({
+    mutationFn: async (version: string) => {
+      await api.post(`/servers/${serverId}/update-version`, { targetVersion: version });
+    },
+    onSuccess: () => {
+      toast({ title: "Server version updated!" });
+      setVersionDialogOpen(false);
+      refetch();
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to update version", description: err.response?.data?.error || err.message, variant: "destructive" });
+    },
+  });
+
+  const preflightMutation = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post(`/servers/${serverId}/update-fabric/preflight`, { targetVersion });
+      return data;
+    },
+    onSuccess: (data) => {
+      setPreflightResult(data);
+    },
+    onError: (err: any) => {
+      toast({ title: "Pre-flight check failed", description: err.response?.data?.error || err.message, variant: "destructive" });
+    },
+  });
+
+  const executeFabricMutation = useMutation({
+    mutationFn: async () => {
+      await api.post(`/servers/${serverId}/update-fabric/execute`, {
+        targetVersion,
+        targetLoaderVersion,
+        incompatibleAction,
+        upgradable: preflightResult?.upgradable || [],
+        incompatible: preflightResult?.incompatible || [],
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Fabric server updated!" });
+      setVersionDialogOpen(false);
+      setPreflightResult(null);
+      refetch();
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to update Fabric", description: err.response?.data?.error || err.message, variant: "destructive" });
+    },
+  });
+
+  const { data: vanillaVersions } = useQuery<string[]>({
+    queryKey: ["versions", "vanilla"],
+    queryFn: async () => {
+      const { data } = await api.get("/versions/vanilla");
+      return data;
+    },
+    enabled: versionDialogOpen,
+  });
+
   const { data: loaderVersions } = useQuery<Array<{ version: string; stable: boolean }>>({
     queryKey: ["versions", "fabric", "loader"],
     queryFn: async () => {
@@ -235,6 +299,23 @@ export default function ServerDashboard() {
           <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
             <span className="capitalize">{config.type === "modpack" ? "Modpack" : config.type}</span>
             <span>{config.gameVersion}</span>
+            {(config.type === "vanilla" || config.type === "fabric") && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-5 px-2 text-[10px] ml-1"
+                disabled={isRunning}
+                onClick={() => {
+                  setTargetVersion("");
+                  setPreflightResult(null);
+                  setTargetLoaderVersion(config?.loaderVersion || "");
+                  setVersionDialogOpen(true);
+                }}
+                title={isRunning ? "Stop the server to change version" : "Change Version"}
+              >
+                Change
+              </Button>
+            )}
             {(config.type === "fabric" || config.type === "modpack") && loaderVersions && (
               <Select value={config.loaderVersion || ""} onValueChange={(v) => setPendingLoader(v)} disabled={loaderMutation.isPending || isRunning}>
                 <SelectTrigger className="h-7 w-36 text-xs">
@@ -462,6 +543,122 @@ export default function ServerDashboard() {
         }}
         onCancel={() => setPendingLoader(null)}
       />
+      <Dialog open={versionDialogOpen} onOpenChange={setVersionDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Update Server Version</DialogTitle>
+            <DialogDescription>
+              Select a new version. {config.type === "vanilla" ? "This will download the new server.jar." : "We will verify mod compatibility before upgrading."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded border border-red-900/50 bg-red-950/20 p-3 mb-2 mt-2">
+            <div className="flex items-start gap-2">
+              <div className="text-sm text-red-300">
+                <span className="font-bold">Warning:</span> Worlds are not completely backwards compatible. Skipping major versions can corrupt chunks. Please create a Backup first!
+              </div>
+            </div>
+          </div>
+
+          {!preflightResult ? (
+            <div className="grid gap-4 py-2">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">Target Game Version</label>
+                <Select value={targetVersion} onValueChange={setTargetVersion}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select version" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {vanillaVersions?.map((v) => (
+                      <SelectItem key={v} value={v}>
+                        {v}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {config.type === "fabric" && loaderVersions && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Target Loader Version</label>
+                  <Select value={targetLoaderVersion} onValueChange={setTargetLoaderVersion}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select loader" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {loaderVersions.map((v) => (
+                        <SelectItem key={v.version} value={v.version}>
+                          {v.version} {v.stable && "(Stable)"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="py-2 space-y-4 text-sm">
+              <div className="bg-green-500/10 text-green-500 border border-green-500/20 rounded p-3">
+                <p className="font-bold mb-1">✅ {preflightResult.upgradable.length} Mods Compatible</p>
+                <p className="text-xs text-green-500/80">These mods will be automatically downloaded and updated.</p>
+              </div>
+
+              {preflightResult.incompatible.length > 0 ? (
+                <div className="bg-red-500/10 text-red-500 border border-red-500/20 rounded p-3">
+                  <p className="font-bold mb-1">❌ {preflightResult.incompatible.length} Mods Incompatible</p>
+                  <p className="text-xs text-red-500/80 mb-3">No compatible version was found for the new game version.</p>
+                  
+                  <div className="space-y-2">
+                    <label className="text-red-500 font-semibold">Action for incompatible mods:</label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer font-normal text-red-500">
+                        <input type="radio" checked={incompatibleAction === "disable"} onChange={() => setIncompatibleAction("disable")} />
+                        Disable them (.disabled)
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer font-normal text-red-500">
+                        <input type="radio" checked={incompatibleAction === "delete"} onChange={() => setIncompatibleAction("delete")} />
+                        Delete completely
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                 <div className="bg-blue-500/10 text-blue-500 border border-blue-500/20 rounded p-3">
+                  All installed mods are fully compatible with this version!
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVersionDialogOpen(false)} disabled={updateVersionMutation.isPending || preflightMutation.isPending || executeFabricMutation.isPending}>
+              Cancel
+            </Button>
+            
+            {!preflightResult ? (
+              <Button
+                onClick={() => {
+                  if (config.type === "fabric") {
+                    preflightMutation.mutate();
+                  } else {
+                    updateVersionMutation.mutate(targetVersion);
+                  }
+                }}
+                disabled={!targetVersion || updateVersionMutation.isPending || preflightMutation.isPending || targetVersion === config.gameVersion}
+              >
+                {config.type === "fabric" ? (preflightMutation.isPending ? "Checking..." : "Check Compatibility") : (updateVersionMutation.isPending ? "Updating..." : "Update")}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => executeFabricMutation.mutate()}
+                disabled={executeFabricMutation.isPending}
+              >
+                {executeFabricMutation.isPending ? "Executing..." : "Execute Upgrade"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

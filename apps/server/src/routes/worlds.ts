@@ -12,12 +12,11 @@ import { getRunningServer } from "../services/ServerManager.js";
 import { copyReadable } from "../services/FileUtils.js";
 import type { WorldInfo, BackupMeta, WorldImportRequest } from "@mcservergui/shared";
 import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
-import { asyncHandler } from "../lib/asyncHandler.js";
 const router = Router();
 
 import { p } from "../lib/params.js";
 
-router.get("/:serverId/worlds", asyncHandler(async (req: Request, res: Response) => {
+router.get("/:serverId/worlds", async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const server = loadServer(serverId);
   if (!server) {
@@ -56,10 +55,10 @@ router.get("/:serverId/worlds", asyncHandler(async (req: Request, res: Response)
   );
 
   res.json(results);
-}));
+});
 
 // Create local backup of a world
-router.post("/:serverId/worlds/backup", asyncHandler(async (req: Request, res: Response) => {
+router.post("/:serverId/worlds/backup", async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const { worldName } = req.body;
   const server = loadServer(serverId);
@@ -130,10 +129,10 @@ router.post("/:serverId/worlds/backup", asyncHandler(async (req: Request, res: R
 
   const size = existsSync(zipPath) ? statSync(zipPath).size : 0;
   res.json({ backupId, size, worldName: world, createdAt: new Date().toISOString() });
-}));
+});
 
 // Restore world from a local backup
-router.post("/:serverId/worlds/restore", asyncHandler(async (req: Request, res: Response) => {
+router.post("/:serverId/worlds/restore", async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const { worldName, backupId } = req.body;
 
@@ -155,10 +154,10 @@ router.post("/:serverId/worlds/restore", asyncHandler(async (req: Request, res: 
   }
 
   res.json({ success: true, rollbackPerformed: result.rollbackPerformed });
-}));
+});
 
 // Restore world from Google Drive backup
-router.post("/:serverId/worlds/restore-drive", asyncHandler(async (req: Request, res: Response) => {
+router.post("/:serverId/worlds/restore-drive", async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const { driveFileId, worldName } = req.body;
 
@@ -174,10 +173,10 @@ router.post("/:serverId/worlds/restore-drive", asyncHandler(async (req: Request,
   }
 
   res.json({ success: true, rollbackPerformed: result.rollbackPerformed });
-}));
+});
 
 // Import a zip file as a world
-router.post("/:serverId/worlds/import", asyncHandler(async (req: Request, res: Response) => {
+router.post("/:serverId/worlds/import", async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const server = loadServer(serverId);
   if (!server) {
@@ -274,7 +273,7 @@ router.post("/:serverId/worlds/import", asyncHandler(async (req: Request, res: R
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
-}));
+});
 
 const sizeCache = new Map<string, { size: number; timestamp: number }>();
 const SIZE_CACHE_TTL = 30000;

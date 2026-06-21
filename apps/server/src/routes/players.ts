@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import path from "path";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { loadServer, getServerDir } from "../services/DataStore.js";
-import { getOnlinePlayers, sendCommand } from "../services/ServerManager.js";
+import { getOnlinePlayers, sendCommand, getRunningServer } from "../services/ServerManager.js";
 import type { PlayerEntry, UpdateOpsRequest, UpdatePlayerListRequest } from "@mcservergui/shared";
 
 const router = Router();
@@ -92,7 +92,24 @@ router.put("/:serverId/players/whitelist", (req: Request, res: Response) => {
     return;
   }
 
-  writePlayerList(getServerDir(serverId), "whitelist.json", entries);
+  const serverDir = getServerDir(serverId);
+  const oldWhitelist = readPlayerList(serverDir, "whitelist.json");
+  
+  writePlayerList(serverDir, "whitelist.json", entries);
+  
+  if (getRunningServer(serverId)) {
+    const oldNames = new Set(oldWhitelist.map((o: any) => o.name));
+    const newNames = new Set(entries.map((o: any) => o.name));
+    
+    for (const o of oldWhitelist) {
+      if (!newNames.has(o.name)) sendCommand(serverId, `whitelist remove ${o.name}`);
+    }
+    for (const o of entries) {
+      if (!oldNames.has(o.name)) sendCommand(serverId, `whitelist add ${o.name}`);
+    }
+    sendCommand(serverId, "whitelist reload");
+  }
+
   res.json({ success: true });
 });
 
@@ -111,6 +128,8 @@ router.put("/:serverId/players/ops", (req: Request, res: Response) => {
   }
 
   const serverDir = getServerDir(serverId);
+  const oldOps = readPlayerList(serverDir, "ops.json");
+  
   const opsWithLevel = entries.map((e: any) => ({
     uuid: e.uuid,
     name: e.name,
@@ -122,6 +141,19 @@ router.put("/:serverId/players/ops", (req: Request, res: Response) => {
     JSON.stringify(opsWithLevel, null, 2),
     "utf-8"
   );
+  
+  if (getRunningServer(serverId)) {
+    const oldNames = new Set(oldOps.map((o: any) => o.name));
+    const newNames = new Set(entries.map((o: any) => o.name));
+    
+    for (const o of oldOps) {
+      if (!newNames.has(o.name)) sendCommand(serverId, `deop ${o.name}`);
+    }
+    for (const o of entries) {
+      if (!oldNames.has(o.name)) sendCommand(serverId, `op ${o.name}`);
+    }
+  }
+
   res.json({ success: true });
 });
 

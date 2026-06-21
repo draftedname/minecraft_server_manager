@@ -212,8 +212,9 @@ export default function Worlds() {
     return match ? match[1] : "world";
   };
 
-  const handleDownloadBackup = (backupId: string) => {
-    window.open(`/api/servers/${serverId}/backups/${backupId}/download`, "_blank");
+  const downloadBackup = async (backupId: string) => {
+    const { data: { ticket } } = await api.get("/auth/ticket");
+    window.open(`/api/servers/${serverId}/backups/${backupId}/download?ticket=${ticket}`, "_blank");
   };
 
   // World upload
@@ -425,7 +426,7 @@ export default function Worlds() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        onClick={() => handleDownloadBackup(backup.id)}
+                        onClick={() => downloadBackup(backup.id)}
                         title="Download"
                       >
                         <Download className="h-4 w-4" />
@@ -498,7 +499,10 @@ export default function Worlds() {
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={() => window.open(`/api/drive/backups/${b.id}/download`, "_blank")}
+                          onClick={async () => {
+                            const { data: { ticket } } = await api.get("/auth/ticket");
+                            window.open(`/api/drive/backups/${b.id}/download?ticket=${ticket}`, "_blank");
+                          }}
                           title="Download"
                         >
                           <Download className="h-4 w-4" />

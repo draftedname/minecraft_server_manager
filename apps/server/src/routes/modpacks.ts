@@ -1,7 +1,6 @@
 import { Router, Request, Response } from "express";
 import { existsSync } from "fs";
 import { loadServer, getServerDir, updateServer } from "../services/DataStore.js";
-import { asyncHandler } from "../lib/asyncHandler.js";
 import { installModpack } from "../services/ModpackInstaller.js";
 import type { ModpackInstallRequest } from "@mcservergui/shared";
 
@@ -9,7 +8,7 @@ const router = Router();
 
 import { p } from "../lib/params.js";
 
-router.post("/:serverId/install-modpack", asyncHandler(async (req: Request, res: Response) => {
+router.post("/:serverId/install-modpack", async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const server = loadServer(serverId);
   if (!server) {
@@ -51,6 +50,6 @@ router.post("/:serverId/install-modpack", asyncHandler(async (req: Request, res:
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
-}));
+});
 
 export { router as modpackRouter };

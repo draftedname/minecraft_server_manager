@@ -3,6 +3,7 @@ import path from "path";
 import { readdirSync, statSync, existsSync, renameSync, unlinkSync, writeFileSync, readFileSync, copyFileSync, mkdirSync } from "fs";
 import { loadServer, getServerDir } from "../services/DataStore.js";
 import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
+import { DATA_DIR } from "../services/config.js";
 import {
   getVersion,
   downloadModFile,
@@ -10,7 +11,6 @@ import {
   getProject,
 } from "../services/ModrinthClient.js";
 import { getIO } from "../websocket/index.js";
-import { asyncHandler } from "../lib/asyncHandler.js";
 import type { ModInfo, ModInstallRequest } from "@mcservergui/shared";
 
 const router = Router();
@@ -54,7 +54,7 @@ router.get("/:serverId/mods", (req: Request, res: Response) => {
   res.json(mods);
 });
 
-router.post("/:serverId/mods/install", asyncHandler(async (req: Request, res: Response) => {
+router.post("/:serverId/mods/install", async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const server = loadServer(serverId);
   if (!server) {
@@ -104,9 +104,9 @@ router.post("/:serverId/mods/install", asyncHandler(async (req: Request, res: Re
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
-}));
+});
 
-router.post("/:serverId/mods/check-updates", asyncHandler(async (req: Request, res: Response) => {
+router.get("/:serverId/mods/check-updates", async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const server = loadServer(serverId);
   if (!server) {
@@ -153,9 +153,9 @@ router.post("/:serverId/mods/check-updates", asyncHandler(async (req: Request, r
   }
 
   res.json({ updates, total: entries.length, outdated: updates.length });
-}));
+});
 
-router.post("/:serverId/mods/update-all", asyncHandler(async (req: Request, res: Response) => {
+router.post("/:serverId/mods/update-all", async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const server = loadServer(serverId);
   if (!server) {
@@ -229,7 +229,7 @@ router.post("/:serverId/mods/update-all", asyncHandler(async (req: Request, res:
     io?.emit("download:progress", { message: "Complete!", current: 1, total: 1 });
   }
   res.json({ results, updated: updatedCount });
-}));
+});
 
 // Mod metadata for update checking
 interface ModMeta {
@@ -240,11 +240,11 @@ interface ModMeta {
   gameVersions: string[];
 }
 
-function getMetaPath(serverId: string): string {
+export function getMetaPath(serverId: string): string {
   return path.join(getServerDir(serverId), "mods", "mods-metadata.json");
 }
 
-function loadModMeta(serverId: string): Record<string, ModMeta> {
+export function loadModMeta(serverId: string): Record<string, ModMeta> {
   const metaPath = getMetaPath(serverId);
   if (!existsSync(metaPath)) return {};
   try {
@@ -254,7 +254,7 @@ function loadModMeta(serverId: string): Record<string, ModMeta> {
   }
 }
 
-function saveModMeta(serverId: string, filename: string, meta: ModMeta): void {
+export function saveModMeta(serverId: string, filename: string, meta: ModMeta): void {
   const metaPath = getMetaPath(serverId);
   const all = loadModMeta(serverId);
   all[filename] = meta;
@@ -352,9 +352,9 @@ router.post("/:serverId/mods/copy-from-upload", (req: Request, res: Response) =>
     return;
   }
 
-  const { path: uploadPath, filename } = req.body as { path: string; filename: string };
-  if (!uploadPath || !filename) {
-    res.status(400).json({ error: "path and filename are required" });
+  const { uploadId, filename } = req.body as { uploadId: string; filename: string };
+  if (!uploadId || !filename) {
+    res.status(400).json({ error: "uploadId and filename are required" });
     return;
   }
 
@@ -372,6 +372,7 @@ router.post("/:serverId/mods/copy-from-upload", (req: Request, res: Response) =>
     throw err;
   }
 
+  const uploadPath = path.join(DATA_DIR, "uploads", `${uploadId}-${filename}`);
   if (!existsSync(uploadPath)) {
     res.status(400).json({ error: "Upload file not found" });
     return;

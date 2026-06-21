@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import path from "path";
-import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, cpSync, unlinkSync } from "fs";
 import { v4 as uuid } from "uuid";
 import { loadServers, addServer, removeServer, loadServer, ensureServerDir, saveServers, updateServer, getServerDir } from "../services/DataStore.js";
 import { startServer, stopServer, restartServer, restartServerAsync, sendCommand, getServerInfo, getRunningServer } from "../services/ServerManager.js";
@@ -11,7 +11,8 @@ import { getIO } from "../websocket/index.js";
 import { readLastLines } from "../services/readLastLines.js";
 import { analyzeLogFile, readServerLog } from "../services/LogAnalyzer.js";
 import { installModpack } from "../services/ModpackInstaller.js";
-import { asyncHandler } from "../lib/asyncHandler.js";
+import { getLatestCompatibleVersion, downloadModFile } from "../services/ModrinthClient.js";
+import { loadModMeta, saveModMeta, getMetaPath } from "./mods.js";
 import type { ServerConfig, CreateServerRequest } from "@mcservergui/shared";
 
 const router = Router();
@@ -29,7 +30,7 @@ router.get("/", (req: Request, res: Response) => {
 });
 
 // Create server
-router.post("/", asyncHandler(async (req: Request, res: Response) => {
+router.post("/", async (req: Request, res: Response) => {
   const body = req.body as CreateServerRequest;
 
   if (!body.name || !body.type) {
@@ -117,7 +118,7 @@ router.post("/", asyncHandler(async (req: Request, res: Response) => {
     console.error("Server creation failed:", err.message);
     res.status(500).json({ error: err.message });
   }
-}));
+});
 
 // Get server details
 router.get("/:id", (req: Request, res: Response) => {
@@ -130,8 +131,36 @@ router.get("/:id", (req: Request, res: Response) => {
   res.json(info);
 });
 
+// Clone server
+router.post("/:id/clone", async (req: Request, res: Response) => {
+  const id = p(req.params, "id");
+  const config = loadServer(id);
+  if (!config) { res.status(404).json({ error: "Server not found" }); return; }
+
+  const shortId = uuid().split("-")[0].substring(0, 8);
+  const newId = id.split("-").slice(0, -1).join("-") + "-" + shortId;
+
+  const newConfig: ServerConfig = {
+    ...config,
+    id: newId,
+    name: `${config.name} (Clone)`,
+    createdAt: new Date().toISOString(),
+    lastStartedAt: null,
+  };
+
+  const srcPath = getServerDir(id);
+  const destPath = ensureServerDir(newId);
+
+  if (existsSync(srcPath)) {
+    cpSync(srcPath, destPath, { recursive: true, force: true });
+  }
+
+  await addServer(newConfig);
+  res.status(201).json(newConfig);
+});
+
 // Delete server
-router.delete("/:id", asyncHandler(async (req: Request, res: Response) => {
+router.delete("/:id", async (req: Request, res: Response) => {
   const id = p(req.params, "id");
 
   const running = getRunningServer(id);
@@ -150,10 +179,10 @@ router.delete("/:id", asyncHandler(async (req: Request, res: Response) => {
     rmSync(serverDir, { recursive: true, force: true });
   }
   res.json({ success: true });
-}));
+});
 
 // Start server
-router.post("/:id/start", asyncHandler(async (req: Request, res: Response) => {
+router.post("/:id/start", async (req: Request, res: Response) => {
   const id = p(req.params, "id");
   const result = await startServer(id);
   if (!result.success) {
@@ -161,10 +190,10 @@ router.post("/:id/start", asyncHandler(async (req: Request, res: Response) => {
     return;
   }
   res.json({ success: true });
-}));
+});
 
 // Stop server
-router.post("/:id/stop", asyncHandler(async (req: Request, res: Response) => {
+router.post("/:id/stop", async (req: Request, res: Response) => {
   const id = p(req.params, "id");
   const result = await stopServer(id);
   if (!result.success) {
@@ -172,7 +201,7 @@ router.post("/:id/stop", asyncHandler(async (req: Request, res: Response) => {
     return;
   }
   res.json({ success: true });
-}));
+});
 
 // Restart server (non-blocking — responds immediately, polls in background)
 router.post("/:id/restart", (req: Request, res: Response) => {
@@ -223,7 +252,7 @@ router.post("/:id/eula/accept", (req: Request, res: Response) => {
 });
 
 // Analyze server log via mclo.gs
-router.post("/:id/log-analyze", asyncHandler(async (req: Request, res: Response) => {
+router.post("/:id/log-analyze", async (req: Request, res: Response) => {
   const id = p(req.params, "id");
   const config = loadServer(id);
   if (!config) {
@@ -237,10 +266,10 @@ router.post("/:id/log-analyze", asyncHandler(async (req: Request, res: Response)
   }
   const result = await analyzeLogFile(logContent);
   res.json(result);
-}));
+});
 
 // Rename server
-router.put("/:id/name", asyncHandler(async (req: Request, res: Response) => {
+router.put("/:id/name", async (req: Request, res: Response) => {
   const id = p(req.params, "id");
   const { name } = req.body;
   if (!name || typeof name !== "string") {
@@ -253,10 +282,10 @@ router.put("/:id/name", asyncHandler(async (req: Request, res: Response) => {
     return;
   }
   res.json({ success: true, name });
-}));
+});
 
 // Update loader version (re-downloads fabric loader and libraries)
-router.put("/:id/loader", asyncHandler(async (req: Request, res: Response) => {
+router.put("/:id/loader", async (req: Request, res: Response) => {
   const id = p(req.params, "id");
   const { loaderVersion } = req.body;
   if (!loaderVersion) {
@@ -275,10 +304,10 @@ router.put("/:id/loader", asyncHandler(async (req: Request, res: Response) => {
   await downloadFabricJar(getServerDir(id), config.gameVersion, loaderVersion);
   const updated = await updateServer(id, { loaderVersion });
   res.json({ success: true, loaderVersion });
-}));
+});
 
 // Update server RAM allocation
-router.put("/:id/ram", asyncHandler(async (req: Request, res: Response) => {
+router.put("/:id/ram", async (req: Request, res: Response) => {
   const id = p(req.params, "id");
   const config = loadServer(id);
   if (!config) {
@@ -297,6 +326,166 @@ router.put("/:id/ram", asyncHandler(async (req: Request, res: Response) => {
   }
   await updateServer(id, { ram });
   res.json({ success: true, ram });
-}));
+});
+
+// Update server game version (Vanilla only)
+router.post("/:id/update-version", async (req: Request, res: Response) => {
+  const id = p(req.params, "id");
+  const config = loadServer(id);
+  if (!config) {
+    res.status(404).json({ error: "Server not found" });
+    return;
+  }
+  if (config.type !== "vanilla") {
+    res.status(400).json({ error: "Version updates are only supported for Vanilla servers." });
+    return;
+  }
+  const running = getRunningServer(id);
+  if (running && running.status !== "crashed") {
+    res.status(400).json({ error: "Server must be stopped to update version." });
+    return;
+  }
+  const targetVersion = req.body.targetVersion;
+  if (!targetVersion || typeof targetVersion !== "string") {
+    res.status(400).json({ error: "targetVersion is required" });
+    return;
+  }
+  try {
+    await downloadVanillaJar(getServerDir(id), targetVersion);
+    const updated = await updateServer(id, { gameVersion: targetVersion });
+    res.json({ success: true, server: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fabric Server Pre-flight
+router.post("/:id/update-fabric/preflight", async (req: Request, res: Response) => {
+  const id = p(req.params, "id");
+  const config = loadServer(id);
+  if (!config || config.type !== "fabric") {
+    res.status(404).json({ error: "Fabric Server not found" });
+    return;
+  }
+  
+  const { targetVersion } = req.body;
+  if (!targetVersion) {
+    res.status(400).json({ error: "targetVersion is required" });
+    return;
+  }
+
+  try {
+    const meta = loadModMeta(id);
+    const upgradable = [];
+    const incompatible = [];
+
+    for (const [filename, modMeta] of Object.entries(meta)) {
+      if (!modMeta.projectId) continue;
+      
+      const latest = await getLatestCompatibleVersion(modMeta.projectId, targetVersion, "fabric");
+      if (latest && latest.files && latest.files[0]) {
+        upgradable.push({
+          oldFilename: filename,
+          newFilename: latest.files[0].filename,
+          projectId: modMeta.projectId,
+          versionId: latest.id,
+          versionNumber: latest.version_number,
+          gameVersions: latest.game_versions || [],
+          url: latest.files[0].url,
+        });
+      } else {
+        incompatible.push({
+          filename,
+          projectId: modMeta.projectId,
+        });
+      }
+    }
+    
+    res.json({ upgradable, incompatible });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fabric Server Execute Update
+router.post("/:id/update-fabric/execute", async (req: Request, res: Response) => {
+  const id = p(req.params, "id");
+  const config = loadServer(id);
+  if (!config || config.type !== "fabric") {
+    res.status(404).json({ error: "Fabric Server not found" });
+    return;
+  }
+  
+  const running = getRunningServer(id);
+  if (running && running.status !== "crashed") {
+    res.status(400).json({ error: "Server must be stopped to update version." });
+    return;
+  }
+
+  const { targetVersion, targetLoaderVersion, incompatibleAction, upgradable, incompatible } = req.body;
+  if (!targetVersion || !targetLoaderVersion) {
+    res.status(400).json({ error: "targetVersion and targetLoaderVersion are required" });
+    return;
+  }
+
+  try {
+    const modsDir = path.join(getServerDir(id), "mods");
+    const metaPath = getMetaPath(id);
+
+    // 1. Download Core
+    await downloadFabricJar(getServerDir(id), targetVersion, targetLoaderVersion);
+
+    // 2. Process Upgradable
+    for (const mod of upgradable) {
+      const dest = path.join(modsDir, mod.newFilename);
+      await downloadModFile(mod.url, dest);
+
+      // Remove old files
+      const oldPath = path.join(modsDir, mod.oldFilename);
+      const oldDisabledPath = oldPath + ".disabled";
+      if (existsSync(oldPath)) unlinkSync(oldPath);
+      if (existsSync(oldDisabledPath)) unlinkSync(oldDisabledPath);
+
+      // Save new meta
+      saveModMeta(id, mod.newFilename, {
+        projectId: mod.projectId,
+        versionId: mod.versionId,
+        versionNumber: mod.versionNumber,
+        installedAt: new Date().toISOString(),
+        gameVersions: mod.gameVersions,
+      });
+
+      // Remove old meta if name changed
+      if (mod.oldFilename !== mod.newFilename) {
+        const allMeta = loadModMeta(id);
+        delete allMeta[mod.oldFilename];
+        writeFileSync(metaPath, JSON.stringify(allMeta, null, 2), "utf-8");
+      }
+    }
+
+    // 3. Process Incompatible
+    for (const mod of incompatible) {
+      const modPath = path.join(modsDir, mod.filename);
+      const disabledPath = modPath + ".disabled";
+
+      if (incompatibleAction === "delete") {
+        if (existsSync(modPath)) unlinkSync(modPath);
+        if (existsSync(disabledPath)) unlinkSync(disabledPath);
+        const allMeta = loadModMeta(id);
+        delete allMeta[mod.filename];
+        writeFileSync(metaPath, JSON.stringify(allMeta, null, 2), "utf-8");
+      } else if (incompatibleAction === "disable") {
+        if (existsSync(modPath)) {
+          import("fs").then(fs => fs.renameSync(modPath, disabledPath));
+        }
+      }
+    }
+
+    const updated = await updateServer(id, { gameVersion: targetVersion, loaderVersion: targetLoaderVersion });
+    res.json({ success: true, server: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 export { router as serversRouter };

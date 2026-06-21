@@ -12,7 +12,7 @@ import {
 } from "fs";
 import { loadServer, getServerDir } from "../services/DataStore.js";
 import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
-import { asyncHandler } from "../lib/asyncHandler.js";
+import { DATA_DIR } from "../services/config.js";
 
 const router = Router();
 
@@ -177,7 +177,7 @@ router.get("/:serverId/files/download", (req: Request, res: Response) => {
 });
 
 // Open file in system editor
-router.post("/:serverId/files/open", asyncHandler(async (req: Request, res: Response) => {
+router.post("/:serverId/files/open", async (req: Request, res: Response) => {
   const serverId = p(req.params, "serverId");
   const { relpath } = req.body;
 
@@ -212,7 +212,7 @@ router.post("/:serverId/files/open", asyncHandler(async (req: Request, res: Resp
   spawn(cmd, args, { detached: true, stdio: "ignore" }).unref();
 
   res.json({ success: true });
-}));
+});
 
 // Copy uploaded file to server directory
 router.post("/:serverId/files/copy-from-upload", (req: Request, res: Response) => {
@@ -220,16 +220,16 @@ router.post("/:serverId/files/copy-from-upload", (req: Request, res: Response) =
   const server = loadServer(serverId);
   if (!server) { res.status(404).json({ error: "Server not found" }); return; }
 
-  const { uploadPath, filename } = req.body;
-  if (!uploadPath || !filename) {
-    res.status(400).json({ error: "uploadPath and filename are required" });
+  const { uploadId, filename, relpath } = req.body;
+  if (!uploadId || !filename) {
+    res.status(400).json({ error: "uploadId and filename are required" });
     return;
   }
 
   const serverDir = getServerDir(serverId);
   let destPath: string;
   try {
-    destPath = safeJoin(serverDir, filename);
+    destPath = safeJoin(serverDir, relpath || "", filename);
   } catch (err) {
     if (err instanceof PathTraversalError) {
       res.status(403).json({ error: "Access denied" });
@@ -241,6 +241,9 @@ router.post("/:serverId/files/copy-from-upload", (req: Request, res: Response) =
   try {
     const destDir = path.dirname(destPath);
     if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+    
+    // Construct safe upload path
+    const uploadPath = path.join(DATA_DIR, "uploads", `${uploadId}-${filename}`);
     if (!existsSync(uploadPath)) {
       res.status(404).json({ error: "Uploaded file not found" });
       return;

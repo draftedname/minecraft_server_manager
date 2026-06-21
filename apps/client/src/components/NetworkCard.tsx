@@ -9,6 +9,7 @@ import {
   Wifi,
   WifiOff,
   CheckCircle,
+  Download,
 } from "lucide-react";
 import api from "@/lib/api";
 import { getSocket } from "@/lib/socket";
@@ -204,6 +205,21 @@ export default function NetworkCard({ isRunning }: { isRunning: boolean }) {
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" />
               {enableMutation.isPending ? "Establishing tunnel..." : "Disabling..."}
+            </div>
+          )}
+
+          {netState.enabled && (
+            <div className="mt-3 space-y-2">
+              <Label className="text-xs">Playit Address</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={netState.address || ""}
+                  onBlur={(e) => setAddressMutation.mutate(e.target.value)}
+                  placeholder="Enter your playit.gg address..."
+                  className="h-8 text-xs"
+                  disabled={setAddressMutation.isPending}
+                />
+              </div>
             </div>
           )}
         </CardContent>

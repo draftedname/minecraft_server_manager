@@ -5,8 +5,11 @@ import { loadServer, loadServers, updateServer, getServerDir, ensureServerDir } 
 import type { ServerStatus, ServerInfo } from "@mcservergui/shared";
 import { v4 as uuid } from "uuid";
 import { getIO } from "../websocket/index.js";
-import { getNetworkState, enablePublicMode } from "./NetworkManager.js";
+import { getNetworkState, enablePublicMode, disablePublicMode } from "./NetworkManager.js";
 import { findLocalJavaPath, checkJava, downloadJava } from "./JavaManager.js";
+import pidusage from "pidusage";
+import pidtree from "pidtree";
+import os from "os";
 
 interface RunningServer {
   process: ChildProcess;
@@ -20,6 +23,7 @@ interface RunningServer {
   startTime: number;
   status: ServerStatus;
   forceKillTimer: ReturnType<typeof setTimeout> | null;
+  pollingTimer: ReturnType<typeof setInterval> | null;
 }
 
 const runningServers = new Map<string, RunningServer>();
@@ -40,8 +44,8 @@ export function getOnlinePlayers(serverId: string): string[] {
 }
 
 function trackPlayerActivity(serverId: string, line: string) {
-  const joinMatch = line.match(/(\w+) joined the game$/);
-  const leaveMatch = line.match(/(\w+) left the game$/);
+  const joinMatch = line.match(/(\w+) joined the game\r?$/);
+  const leaveMatch = line.match(/(\w+) left the game\r?$/);
   if (joinMatch) {
     const players = onlinePlayers.get(serverId) || new Set<string>();
     players.add(joinMatch[1]);
@@ -223,11 +227,41 @@ function handleProcess(id: string, config: import("@mcservergui/shared").ServerC
     startTime: Date.now(),
     status: "starting",
     forceKillTimer: null,
+    pollingTimer: null,
   };
 
   runningServers.set(id, running);
 
   const io = getIO();
+
+  running.pollingTimer = setInterval(async () => {
+    if (proc.pid && !proc.killed) {
+      try {
+        const pids = await pidtree(proc.pid, { root: true });
+        const stats = await pidusage(pids);
+        
+        let totalCpu = 0;
+        let totalMemory = 0;
+        for (const pid in stats) {
+          if (stats[pid]) {
+            totalCpu += stats[pid].cpu || 0;
+            totalMemory += stats[pid].memory || 0;
+          }
+        }
+        
+        totalCpu = totalCpu / os.cpus().length;
+
+        io?.to(`server:${id}`).emit("server:stats", {
+          serverId: id,
+          cpu: totalCpu,
+          memory: totalMemory,
+          timestamp: Date.now()
+        });
+      } catch (e) {
+        // Ignore if process dies during poll
+      }
+    }
+  }, 2000);
 
   proc.stdout?.on("data", (data: Buffer) => {
     const lines = data.toString().split("\n").filter(Boolean);
@@ -261,6 +295,11 @@ function handleProcess(id: string, config: import("@mcservergui/shared").ServerC
       clearTimeout(running.forceKillTimer);
       running.forceKillTimer = null;
     }
+    if (running.pollingTimer) {
+      clearInterval(running.pollingTimer);
+      running.pollingTimer = null;
+      if (proc.pid) pidusage.clear();
+    }
     const status = code === 0 ? "stopped" : "crashed";
     running.status = status;
     io?.emit("server:status", { serverId: id, status, exitCode: code });
@@ -268,12 +307,21 @@ function handleProcess(id: string, config: import("@mcservergui/shared").ServerC
       runningServers.delete(id);
       onlinePlayers.delete(id);
     }
+    // Auto-stop tunnel when last server exits
+    if (runningServers.size === 0) {
+      disablePublicMode(id);
+    }
   });
 
   proc.on("error", (err) => {
     if (running.forceKillTimer) {
       clearTimeout(running.forceKillTimer);
       running.forceKillTimer = null;
+    }
+    if (running.pollingTimer) {
+      clearInterval(running.pollingTimer);
+      running.pollingTimer = null;
+      if (proc.pid) pidusage.clear();
     }
     running.status = "crashed";
     io?.to(`server:${id}`).emit("server:status", { status: "crashed", error: err.message });

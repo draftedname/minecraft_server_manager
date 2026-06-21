@@ -36,6 +36,14 @@
       "signAndEditExecutable": false,
       "verifyUpdateCodeSignature": false
     },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.games"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Game"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
@@ -50,12 +58,17 @@
   },
   "dependencies": {
     "archiver": "^7.0.1",
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "electron-updater": "^6.8.9",
     "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
     "extract-zip": "^2.0.1",
     "googleapis": "^146.0.0",
+    "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
+    "pidtree": "^1.0.0",
+    "pidusage": "^4.0.1",
     "socket.io": "^4.8.1",
     "uuid": "^11.1.0"
   },

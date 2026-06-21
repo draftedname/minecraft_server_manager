@@ -4,6 +4,7 @@ export interface ServerConfig {
   type: "vanilla" | "fabric" | "modpack";
   gameVersion: string;
   loaderVersion?: string;
+  /** Memory in MB */
   ram: number;
   javaPath: string;
   createdAt: string;
@@ -15,6 +16,7 @@ export interface ServerConfig {
 
 export interface BackupConfig {
   enabled: boolean;
+  /** Interval in minutes */
   intervalMinutes: number;
   onStop: boolean;
   driveFolderId: string | null;
@@ -27,6 +29,7 @@ export interface ServerInfo {
   config: ServerConfig;
   status: ServerStatus;
   pid: number | null;
+  /** Uptime in milliseconds */
   uptime: number;
 }
 
@@ -35,6 +38,7 @@ export interface CreateServerRequest {
   type: "vanilla" | "fabric" | "modpack";
   gameVersion: string;
   loaderVersion?: string;
+  /** Memory in MB */
   ram: number;
   modpackId?: string;
   modpackVersionId?: string;
@@ -49,6 +53,7 @@ export interface JavaInfo {
 
 export interface ModInfo {
   filename: string;
+  /** Size in bytes */
   size: number;
   enabled: boolean;
   modrinthId: string | null;
@@ -58,6 +63,7 @@ export interface ModInfo {
 
 export interface WorldInfo {
   name: string;
+  /** Size in bytes */
   size: number;
   lastModified: string;
   isActive: boolean;
@@ -67,6 +73,7 @@ export interface BackupMeta {
   id: string;
   worldName: string;
   serverId: string;
+  /** Size in bytes */
   size: number;
   createdAt: string;
   drive: boolean;

@@ -23,7 +23,6 @@ import { getRunningServer } from "../services/ServerManager.js";
 import { DATA_DIR } from "../services/config.js";
 import { v4 as uuid } from "uuid";
 
-import { asyncHandler } from "../lib/asyncHandler.js";
 import { safeJoin, PathTraversalError } from "../services/safeJoin.js";
 
 const router = Router();
@@ -46,7 +45,7 @@ router.get("/drive/auth-url", (_req: Request, res: Response) => {
 });
 
 // OAuth callback
-router.get("/drive/oauth2callback", asyncHandler(async (req: Request, res: Response) => {
+router.get("/drive/oauth2callback", async (req: Request, res: Response) => {
   const code = req.query.code as string;
   if (!code) {
     res.status(400).send("Missing authorization code");
@@ -66,14 +65,14 @@ router.get("/drive/oauth2callback", asyncHandler(async (req: Request, res: Respo
   } else {
     res.status(500).send("Authentication failed");
   }
-}));
+});
 
 // Disconnect Drive
-router.post("/drive/disconnect", asyncHandler(async (_req: Request, res: Response) => {
+router.post("/drive/disconnect", async (_req: Request, res: Response) => {
   await disconnectDrive();
   stopScheduler();
   res.json({ success: true });
-}));
+});
 
 // Get schedule config
 router.get("/drive/schedule", (_req: Request, res: Response) => {
@@ -90,7 +89,7 @@ router.put("/drive/schedule", (req: Request, res: Response) => {
 });
 
 // List Drive backups
-router.get("/drive/backups", asyncHandler(async (req: Request, res: Response) => {
+router.get("/drive/backups", async (req: Request, res: Response) => {
   const serverName = req.query.serverName;
   let backups = await listDriveBackups();
   if (serverName) {
@@ -98,10 +97,10 @@ router.get("/drive/backups", asyncHandler(async (req: Request, res: Response) =>
     backups = backups.filter((b) => b.name.toLowerCase().startsWith(name));
   }
   res.json(backups);
-}));
+});
 
 // Delete Drive backup
-router.delete("/drive/backups/:fileId", asyncHandler(async (req: Request, res: Response) => {
+router.delete("/drive/backups/:fileId", async (req: Request, res: Response) => {
   const fileId = p(req.params, "fileId");
   const ok = await deleteDriveBackup(fileId);
   if (ok) {
@@ -109,10 +108,10 @@ router.delete("/drive/backups/:fileId", asyncHandler(async (req: Request, res: R
   } else {
     res.status(500).json({ error: "Failed to delete from Drive" });
   }
-}));
+});
 
 // Download Drive backup
-router.get("/drive/backups/:fileId/download", asyncHandler(async (req: Request, res: Response) => {
+router.get("/drive/backups/:fileId/download", async (req: Request, res: Response) => {
   const tmpDir = path.join(DATA_DIR, "tmp");
   if (!existsSync(tmpDir)) {
     mkdirSync(tmpDir, { recursive: true });
@@ -127,10 +126,10 @@ router.get("/drive/backups/:fileId/download", asyncHandler(async (req: Request, 
   } else {
     res.status(500).json({ error: "Download failed" });
   }
-}));
+});
 
 // Manual backup to Drive
-router.post("/drive/backup", asyncHandler(async (req: Request, res: Response) => {
+router.post("/drive/backup", async (req: Request, res: Response) => {
   const { serverId, worldName } = req.body;
   if (!serverId) {
     res.status(400).json({ error: "serverId is required" });
@@ -168,10 +167,10 @@ router.post("/drive/backup", asyncHandler(async (req: Request, res: Response) =>
   } else {
     res.status(500).json({ error: result.error });
   }
-}));
+});
 
 // Upload credentials file
-router.post("/drive/credentials", asyncHandler(async (req: Request, res: Response) => {
+router.post("/drive/credentials", async (req: Request, res: Response) => {
   const { credentials } = req.body;
   if (!credentials) {
     res.status(400).json({ error: "credentials JSON is required" });
@@ -193,6 +192,6 @@ router.post("/drive/credentials", asyncHandler(async (req: Request, res: Respons
   } catch (err: any) {
     res.status(400).json({ error: `Invalid JSON: ${err.message}` });
   }
-}));
+});
 
 export { router as driveRouter };

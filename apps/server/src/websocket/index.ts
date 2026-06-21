@@ -8,11 +8,19 @@ export function setupWebSocket(server: Server) {
   io.on("connection", (socket) => {
     console.log(`Client connected: ${socket.id}`);
 
-    socket.on("console:subscribe", (serverId: string) => {
+    socket.on("server:subscribe", (serverId: string) => {
       socket.join(`server:${serverId}`);
       console.log(`Socket ${socket.id} subscribed to server ${serverId}`);
     });
 
+    socket.on("server:unsubscribe", (serverId: string) => {
+      socket.leave(`server:${serverId}`);
+    });
+
+    // Also support the old event for backwards compatibility with any un-reloaded clients
+    socket.on("console:subscribe", (serverId: string) => {
+      socket.join(`server:${serverId}`);
+    });
     socket.on("console:unsubscribe", (serverId: string) => {
       socket.leave(`server:${serverId}`);
     });

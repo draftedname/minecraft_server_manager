@@ -148,6 +148,10 @@ Output: `dist-electron/MC Server GUI Setup x.x.x.exe`
 | Server Jars | Mojang version manifest, Fabric meta API |
 | Cloud Backup | Google Drive API v3 (OAuth 2.0) |
 | Tunneling | playit.gg via Windows Service Control Manager |
+| Authentication | bcryptjs, jsonwebtoken |
+| Security | express-rate-limit |
+| Process Monitoring | pidtree, pidusage |
+| Auto-Updating | electron-updater |
 | Packaging | electron-builder 25 (NSIS) |
 
 ---

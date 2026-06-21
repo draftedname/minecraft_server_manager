@@ -75,7 +75,8 @@ export function useChunkedUpload() {
                 }
               );
               break;
-            } catch {
+            } catch (err: any) {
+              if (err?.name === "CanceledError" || err?.name === "AbortError") throw err;
               retries++;
               if (retries === maxRetries) throw new Error(`Chunk ${i} failed after ${maxRetries} retries`);
             }
@@ -88,7 +89,7 @@ export function useChunkedUpload() {
         const { data: finalData } = await api.post(`/upload/${uploadId}/finalize`, {}, { signal });
         if (mountedRef.current) {
           setState({ uploading: false, progress: 100, error: null });
-          onComplete?.(finalData.path);
+          onComplete?.(uploadId);
         }
         return true;
       } catch (err: any) {

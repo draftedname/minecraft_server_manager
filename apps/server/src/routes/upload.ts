@@ -5,7 +5,6 @@ import { finished } from "stream/promises";
 import { v4 as uuid } from "uuid";
 import { DATA_DIR } from "../services/config.js";
 import { safeJoin } from "../services/safeJoin.js";
-import { asyncHandler } from "../lib/asyncHandler.js";
 import type { UploadInitRequest } from "@mcservergui/shared";
 
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
@@ -87,7 +86,7 @@ const router = Router();
 const MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024; // 4GB total
 
 // Initialize a new chunked upload
-router.post("/upload/init", asyncHandler((req: Request, res: Response) => {
+router.post("/upload/init", (req: Request, res: Response) => {
   const { filename, totalChunks } = req.body as UploadInitRequest;
 
   if (!filename || !totalChunks) {
@@ -114,10 +113,10 @@ router.post("/upload/init", asyncHandler((req: Request, res: Response) => {
   });
 
   res.json({ uploadId });
-}));
+});
 
 // Finalize: assemble chunks into final file
-router.post("/upload/:uploadId/finalize", asyncHandler(async (req: Request, res: Response) => {
+router.post("/upload/:uploadId/finalize", async (req: Request, res: Response) => {
   const uploadId = p(req.params, "uploadId");
   const session = uploadSessions.get(uploadId);
   const uploadDir = path.join(UPLOADS_DIR, uploadId);
@@ -187,7 +186,7 @@ router.post("/upload/:uploadId/finalize", asyncHandler(async (req: Request, res:
     path: destFile,
     size: statSync(destFile).size,
   });
-}));
+});
 
 // Cleanup stale uploads older than 1 hour
 setInterval(() => {

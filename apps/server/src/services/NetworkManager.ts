@@ -17,7 +17,6 @@ function isWindows(): boolean {
 }
 
 function scQuery(): { exists: boolean; running: boolean; error?: string } {
-  // Primary: sc query
   try {
     const result = spawnSync("sc", ["query", "playitd"], { encoding: "utf-8", stdio: "pipe", windowsHide: true });
     if (result.error) {
@@ -29,7 +28,6 @@ function scQuery(): { exists: boolean; running: boolean; error?: string } {
     }
   } catch {}
 
-  // Fallback 1: PowerShell Get-Service
   try {
     const ps = spawnSync("powershell", [
       "-NoProfile", "-Command",
@@ -37,21 +35,14 @@ function scQuery(): { exists: boolean; running: boolean; error?: string } {
     ], { encoding: "utf-8", stdio: "pipe", windowsHide: true });
     if (!ps.error) {
       const status = ps.stdout?.trim();
-      if (status === "Running") {
-        return { exists: true, running: true };
-      }
-      if (status) {
-        return { exists: true, running: false };
-      }
+      if (status === "Running") return { exists: true, running: true };
+      if (status) return { exists: true, running: false };
     }
   } catch {}
 
-  // Fallback 2: tasklist
   try {
     const tl = spawnSync("tasklist", ["/FI", "IMAGENAME eq playitd.exe"], { encoding: "utf-8", stdio: "pipe", windowsHide: true });
-    if (!tl.error && tl.stdout?.includes("playitd.exe")) {
-      return { exists: true, running: true };
-    }
+    if (!tl.error && tl.stdout?.includes("playitd.exe")) return { exists: true, running: true };
   } catch {}
 
   console.error("playitd detection failed: all methods (sc, powershell, tasklist) could not detect playitd");
@@ -138,9 +129,7 @@ export async function enablePublicMode(serverId: string, port: number = 25565): 
 export async function disablePublicMode(serverId: string): Promise<void> {
   const state = getNetworkState(serverId);
   state.enabled = false;
-
   scStop();
-
   state.mode = "none";
   state.address = null;
   state.error = null;

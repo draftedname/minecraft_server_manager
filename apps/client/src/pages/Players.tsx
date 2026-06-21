@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Users, Plus, Trash2, Shield, ShieldOff, Ban, UserX, Activity } from "lucide-react";
+import { Users, Plus, Trash2, Shield, ShieldOff, Ban, UserX, Activity, Search } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -34,6 +34,7 @@ export default function Players() {
 
   const [newWhitelist, setNewWhitelist] = useState({ name: "", uuid: "" });
   const [newOp, setNewOp] = useState({ name: "", uuid: "" });
+  const [searchQuery, setSearchQuery] = useState("");
 
   const { data, isLoading, refetch } = useQuery<PlayerLists>({
     queryKey: ["server", serverId, "players"],
@@ -69,13 +70,54 @@ export default function Players() {
     mutationFn: async ({ name, action }: { name: string; action: string }) => {
       await api.post(`/servers/${serverId}/players/${encodeURIComponent(name)}/${action}`);
     },
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ["server", serverId, "players"] });
+      const previousPlayers = queryClient.getQueryData<PlayerLists>(["server", serverId, "players"]);
+
+      queryClient.setQueryData<PlayerLists>(["server", serverId, "players"], (old) => {
+        if (!old) return old;
+        const newOps = [...(old.ops || [])];
+        const newBans = [...(old.bannedPlayers || [])];
+        const newOnline = [...(old.online || [])];
+
+        if (vars.action === "op") {
+          if (!newOps.find((o) => o.name === vars.name)) {
+            newOps.push({ name: vars.name, uuid: crypto.randomUUID() });
+          }
+        } else if (vars.action === "deop") {
+          const idx = newOps.findIndex((o) => o.name === vars.name);
+          if (idx !== -1) newOps.splice(idx, 1);
+        } else if (vars.action === "ban") {
+          if (!newBans.find((b) => b.name === vars.name)) {
+            newBans.push({ name: vars.name, uuid: crypto.randomUUID() });
+          }
+          const onlineIdx = newOnline.findIndex(n => n === vars.name);
+          if(onlineIdx !== -1) newOnline.splice(onlineIdx, 1);
+        } else if (vars.action === "unban") {
+          const idx = newBans.findIndex((b) => b.name === vars.name);
+          if (idx !== -1) newBans.splice(idx, 1);
+        } else if (vars.action === "kick") {
+          const onlineIdx = newOnline.findIndex(n => n === vars.name);
+          if(onlineIdx !== -1) newOnline.splice(onlineIdx, 1);
+        }
+
+        return { ...old, ops: newOps, bannedPlayers: newBans, online: newOnline };
+      });
+
+      return { previousPlayers };
+    },
+    onError: (err: any, _, context) => {
+      toast({ title: err.response?.data?.error || "Action failed", variant: "destructive" });
+      if (context?.previousPlayers) {
+        queryClient.setQueryData(["server", serverId, "players"], context.previousPlayers);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["server", serverId, "players"] });
+    },
     onSuccess: (_, vars) => {
       const pastTense: Record<string, string> = { kick: "kicked", ban: "banned", op: "opped", deop: "deopped" };
       toast({ title: `${vars.name} ${pastTense[vars.action] || vars.action}` });
-      refetch();
-    },
-    onError: (err: any) => {
-      toast({ title: err.response?.data?.error || "Action failed", variant: "destructive" });
     },
   });
 
@@ -114,28 +156,49 @@ export default function Players() {
   }
 
   const online = data?.online || [];
+  
+  const q = searchQuery.toLowerCase();
+  const onlineFiltered = online.filter(name => name.toLowerCase().includes(q));
+  const whitelistFiltered = (data?.whitelist || []).filter(p => p.name.toLowerCase().includes(q) || p.uuid?.toLowerCase().includes(q));
+  const opsFiltered = (data?.ops || []).filter(p => p.name.toLowerCase().includes(q) || p.uuid?.toLowerCase().includes(q));
+  const bansFiltered = (data?.bannedPlayers || []).filter(p => p.name.toLowerCase().includes(q) || p.uuid?.toLowerCase().includes(q));
+  const bannedIpsFiltered = (data?.bannedIps || []).filter(p => p.name.toLowerCase().includes(q) || p.uuid?.toLowerCase().includes(q));
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-border px-6 py-4">
         <Users className="h-5 w-5 text-primary" />
-        <div>
+        <div className="flex-1">
           <h1 className="text-lg font-bold">Players</h1>
           <p className="text-xs text-muted-foreground">
             {online.length > 0 ? `${online.length} online` : "No players online"}
           </p>
         </div>
+        <div className="relative w-64">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input 
+            placeholder="Search players..." 
+            className="pl-8 bg-background" 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-6">
-        {online.length > 0 && (
-          <div className="mb-6">
-            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase">
-              <Activity className="h-4 w-4 text-green-400" />
-              Online Players
-            </h2>
-            <Card>
-              <CardContent className="p-0">
+      <div className="flex-1 overflow-auto p-6 space-y-4">
+        <Accordion type="multiple" defaultValue={["online", "whitelist", "ops", "bans"]} className="w-full space-y-4">
+          
+          <AccordionItem value="online" className="border rounded-lg bg-card text-card-foreground shadow-sm px-4">
+            <AccordionTrigger className="hover:no-underline">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-green-400" />
+                <span className="font-semibold">Online Players ({onlineFiltered.length})</span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent>
+              {onlineFiltered.length === 0 ? (
+                <div className="py-4 text-center text-sm text-muted-foreground">No online players found</div>
+              ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -144,7 +207,7 @@ export default function Players() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {online.map((name) => (
+                    {onlineFiltered.map((name) => (
                       <TableRow key={name}>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -157,13 +220,13 @@ export default function Players() {
                             {(() => {
                               const isOp = data?.ops?.some((o) => o.name === name);
                               return (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => actionMutation.mutate({ name, action: isOp ? "deop" : "op" })}
-                              title={isOp ? "Remove Operator" : "Make Operator"}
-                              disabled={actionMutation.isPending}
-                            >
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => actionMutation.mutate({ name, action: isOp ? "deop" : "op" })}
+                                  title={isOp ? "Remove Operator" : "Make Operator"}
+                                  disabled={actionMutation.isPending}
+                                >
                                   {isOp ? (
                                     <ShieldOff className="h-3 w-3 mr-1" />
                                   ) : (
@@ -200,171 +263,165 @@ export default function Players() {
                     ))}
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+              )}
+            </AccordionContent>
+          </AccordionItem>
 
-        <Tabs defaultValue="whitelist">
-          <TabsList className="mb-4">
-            <TabsTrigger value="whitelist">Whitelist</TabsTrigger>
-            <TabsTrigger value="ops">Operators</TabsTrigger>
-            <TabsTrigger value="bans">Bans</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="whitelist">
-            <Card>
-              <CardHeader><CardTitle>Whitelist</CardTitle></CardHeader>
-              <CardContent>
-                <div className="mb-4 flex gap-3">
-                  <div className="flex-1">
-                    <Label htmlFor="wl-name">Player Name</Label>
-                    <Input id="wl-name" placeholder="Notch" value={newWhitelist.name} onChange={(e) => setNewWhitelist((p) => ({ ...p, name: e.target.value }))} />
-                  </div>
-                  <div className="flex-1">
-                    <Label htmlFor="wl-uuid">UUID</Label>
-                    <Input id="wl-uuid" placeholder="Optional" value={newWhitelist.uuid} onChange={(e) => setNewWhitelist((p) => ({ ...p, uuid: e.target.value }))} />
-                  </div>
-                  <div className="flex items-end">
-                    <Button onClick={addToWhitelist} disabled={whitelistMutation.isPending}><Plus className="h-4 w-4" /> Add</Button>
-                  </div>
+          <AccordionItem value="whitelist" className="border rounded-lg bg-card text-card-foreground shadow-sm px-4">
+            <AccordionTrigger className="hover:no-underline">
+              <span className="font-semibold">Whitelist ({whitelistFiltered.length})</span>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="mb-4 flex gap-3 pt-2">
+                <div className="flex-1">
+                  <Label htmlFor="wl-name">Player Name</Label>
+                  <Input id="wl-name" placeholder="Notch" value={newWhitelist.name} onChange={(e) => setNewWhitelist((p) => ({ ...p, name: e.target.value }))} />
                 </div>
-                <Table>
-                  <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>UUID</TableHead><TableHead className="w-20">Actions</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {!data?.whitelist?.length ? (
-                      <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">No whitelisted players</TableCell></TableRow>
-                    ) : (
-                      data.whitelist.map((e) => (
-                        <TableRow key={e.uuid || e.name}>
-                          <TableCell className="font-medium">{e.name}</TableCell>
-                          <TableCell className="font-mono text-xs text-muted-foreground">{e.uuid}</TableCell>
-                          <TableCell>
-                            <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => removeFromList("whitelist", e)} disabled={whitelistMutation.isPending}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="ops">
-            <Card>
-              <CardHeader><CardTitle>Operators</CardTitle></CardHeader>
-              <CardContent>
-                <div className="mb-4 flex gap-3">
-                  <div className="flex-1">
-                    <Label htmlFor="op-name">Player Name</Label>
-                    <Input id="op-name" placeholder="Notch" value={newOp.name} onChange={(e) => setNewOp((p) => ({ ...p, name: e.target.value }))} />
-                  </div>
-                  <div className="flex-1">
-                    <Label htmlFor="op-uuid">UUID</Label>
-                    <Input id="op-uuid" placeholder="Optional" value={newOp.uuid} onChange={(e) => setNewOp((p) => ({ ...p, uuid: e.target.value }))} />
-                  </div>
-                  <div className="flex items-end">
-                    <Button onClick={addToOps} disabled={opsMutation.isPending}><Plus className="h-4 w-4" /> Add</Button>
-                  </div>
+                <div className="flex-1">
+                  <Label htmlFor="wl-uuid">UUID</Label>
+                  <Input id="wl-uuid" placeholder="Optional" value={newWhitelist.uuid} onChange={(e) => setNewWhitelist((p) => ({ ...p, uuid: e.target.value }))} />
                 </div>
-                <Table>
-                  <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>UUID</TableHead><TableHead className="w-20">Actions</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {!data?.ops?.length ? (
-                      <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">No operators</TableCell></TableRow>
-                    ) : (
-                      data.ops.map((e) => (
-                        <TableRow key={e.uuid || e.name}>
-                          <TableCell className="font-medium">{e.name}</TableCell>
-                          <TableCell className="font-mono text-xs text-muted-foreground">{e.uuid}</TableCell>
-                          <TableCell>
-                            <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => removeFromList("ops", e)} disabled={opsMutation.isPending}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                <div className="flex items-end">
+                  <Button onClick={addToWhitelist} disabled={whitelistMutation.isPending}><Plus className="h-4 w-4 mr-1" /> Add</Button>
+                </div>
+              </div>
+              <Table>
+                <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>UUID</TableHead><TableHead className="w-20">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {!whitelistFiltered.length ? (
+                    <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">No whitelisted players found</TableCell></TableRow>
+                  ) : (
+                    whitelistFiltered.map((e) => (
+                      <TableRow key={e.uuid || e.name}>
+                        <TableCell className="font-medium">{e.name}</TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{e.uuid}</TableCell>
+                        <TableCell>
+                          <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => removeFromList("whitelist", e)} disabled={whitelistMutation.isPending}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </AccordionContent>
+          </AccordionItem>
 
-          <TabsContent value="bans">
-            <div className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Banned Players</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {!data?.bannedPlayers?.length ? (
-                    <p className="text-sm text-muted-foreground">No banned players</p>
+          <AccordionItem value="ops" className="border rounded-lg bg-card text-card-foreground shadow-sm px-4">
+            <AccordionTrigger className="hover:no-underline">
+              <span className="font-semibold">Operators ({opsFiltered.length})</span>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="mb-4 flex gap-3 pt-2">
+                <div className="flex-1">
+                  <Label htmlFor="op-name">Player Name</Label>
+                  <Input id="op-name" placeholder="Notch" value={newOp.name} onChange={(e) => setNewOp((p) => ({ ...p, name: e.target.value }))} />
+                </div>
+                <div className="flex-1">
+                  <Label htmlFor="op-uuid">UUID</Label>
+                  <Input id="op-uuid" placeholder="Optional" value={newOp.uuid} onChange={(e) => setNewOp((p) => ({ ...p, uuid: e.target.value }))} />
+                </div>
+                <div className="flex items-end">
+                  <Button onClick={addToOps} disabled={opsMutation.isPending}><Plus className="h-4 w-4 mr-1" /> Add</Button>
+                </div>
+              </div>
+              <Table>
+                <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>UUID</TableHead><TableHead className="w-20">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {!opsFiltered.length ? (
+                    <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">No operators found</TableCell></TableRow>
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Name</TableHead>
-                          <TableHead>UUID</TableHead>
-                          <TableHead className="w-16"></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {data.bannedPlayers.map((p) => (
-                          <TableRow key={p.uuid || p.name}>
-                            <TableCell>{p.name}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground font-mono">{p.uuid}</TableCell>
-                            <TableCell>
-                              <Button size="icon" variant="ghost" onClick={() => actionMutation.mutate({ name: p.name, action: "unban" })} disabled={actionMutation.isPending} title="Unban">
-                                <UserX className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                    opsFiltered.map((e) => (
+                      <TableRow key={e.uuid || e.name}>
+                        <TableCell className="font-medium">{e.name}</TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{e.uuid}</TableCell>
+                        <TableCell>
+                          <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => removeFromList("ops", e)} disabled={opsMutation.isPending}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
                   )}
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Banned IPs</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {!data?.bannedIps?.length ? (
-                    <p className="text-sm text-muted-foreground">No banned IPs</p>
+                </TableBody>
+              </Table>
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="bans" className="border rounded-lg bg-card text-card-foreground shadow-sm px-4">
+            <AccordionTrigger className="hover:no-underline">
+              <span className="font-semibold">Bans ({bansFiltered.length + bannedIpsFiltered.length})</span>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="space-y-6 pt-2">
+                <div>
+                  <h3 className="text-sm font-semibold mb-2">Banned Players</h3>
+                  {!bansFiltered.length ? (
+                    <p className="text-sm text-muted-foreground">No banned players found</p>
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>IP</TableHead>
-                          <TableHead>UUID</TableHead>
-                          <TableHead className="w-16"></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {data.bannedIps.map((p) => (
-                          <TableRow key={p.name}>
-                            <TableCell className="font-mono">{p.name}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground font-mono">{p.uuid}</TableCell>
-                            <TableCell>
-                              <Button size="icon" variant="ghost" onClick={() => actionMutation.mutate({ name: p.name, action: "unban-ip" })} disabled={actionMutation.isPending} title="Unban IP">
-                                <UserX className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>UUID</TableHead>
+                            <TableHead className="w-16"></TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {bansFiltered.map((p) => (
+                            <TableRow key={p.uuid || p.name}>
+                              <TableCell>{p.name}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground font-mono">{p.uuid}</TableCell>
+                              <TableCell>
+                                <Button size="icon" variant="ghost" onClick={() => actionMutation.mutate({ name: p.name, action: "unban" })} disabled={actionMutation.isPending} title="Unban">
+                                  <UserX className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   )}
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-        </Tabs>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold mb-2">Banned IPs</h3>
+                  {!bannedIpsFiltered.length ? (
+                    <p className="text-sm text-muted-foreground">No banned IPs found</p>
+                  ) : (
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>IP</TableHead>
+                            <TableHead>UUID</TableHead>
+                            <TableHead className="w-16"></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {bannedIpsFiltered.map((p) => (
+                            <TableRow key={p.name}>
+                              <TableCell className="font-mono">{p.name}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground font-mono">{p.uuid}</TableCell>
+                              <TableCell>
+                                <Button size="icon" variant="ghost" onClick={() => actionMutation.mutate({ name: p.name, action: "unban-ip" })} disabled={actionMutation.isPending} title="Unban IP">
+                                  <UserX className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
+        </Accordion>
       </div>
     </div>
   );

@@ -7,6 +7,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { DATA_DIR, SERVERS_DIR, SERVERS_FILE, BACKUPS_DIR } from "./services/config.js";
 import { loadServers, saveServers } from "./services/DataStore.js";
+import { authMiddleware } from "./middleware/auth.js";
+import { authRouter, ticketRouter } from "./routes/auth.js";
 import { serversRouter } from "./routes/servers.js";
 import { versionsRouter } from "./routes/versions.js";
 import { javaRouter } from "./routes/java.js";
@@ -50,14 +52,14 @@ const io = new Server(httpServer, {
 
 app.use(cors({ origin: /^https?:\/\/(?:localhost|127\.0\.0\.1)(:\d+)?$/ }));
 
-// NOTE: API endpoints have no authentication. This app is designed for
-// LAN/localhost use. Anyone who can reach the app's port can control servers,
-// read/write files, and access Google Drive OAuth callbacks.
-
 // Mount chunk upload router before express.json to avoid buffering chunks in memory
 app.use("/api", uploadChunkRouter);
 
 app.use(express.json());
+
+app.use("/api", authRouter);
+app.use("/api", authMiddleware);
+app.use("/api/auth", ticketRouter);
 
 app.use("/api/versions", versionsRouter);
 app.use("/api/java", javaRouter);

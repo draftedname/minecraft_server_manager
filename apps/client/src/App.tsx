@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import AppLayout from "./components/layout/AppLayout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import AuthGate from "./components/AuthGate";
 import Dashboard from "./pages/Dashboard";
 import NewServer from "./pages/NewServer";
 import Console from "./pages/Console";
@@ -15,7 +16,8 @@ import DriveSettings from "./pages/DriveSettings";
 export default function App() {
   return (
     <BrowserRouter>
-      <ErrorBoundary>
+      <AuthGate>
+        <ErrorBoundary>
         <Routes>
           <Route element={<AppLayout />}>
           <Route path="/" element={<Dashboard />} />
@@ -30,7 +32,8 @@ export default function App() {
           <Route path="/drive" element={<DriveSettings />} />
         </Route>
       </Routes>
-      </ErrorBoundary>
+        </ErrorBoundary>
+      </AuthGate>
     </BrowserRouter>
   );
 }

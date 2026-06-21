@@ -36,12 +36,14 @@ export interface AnalyzeResult {
   };
 }
 
+import { readLastLines } from "./readLastLines.js";
+
 export function readServerLog(serverId: string): string {
   const logPath = path.join(SERVERS_DIR, serverId, "logs", "latest.log");
   if (!existsSync(logPath)) {
     return "";
   }
-  return readFileSync(logPath, "utf-8");
+  return readLastLines(logPath, 5000, 1024 * 1024).join("\n");
 }
 
 export async function analyzeLogFile(logContent: string): Promise<AnalyzeResult> {

@@ -1,4 +1,5 @@
 import { httpServer } from "./index.js";
+import path from "path";
 import { startScheduler, stopScheduler } from "./services/BackupScheduler.js";
 import { forceKillAll, getAllRunning } from "./services/ServerManager.js";
 import { forceKillAllPlayit } from "./services/NetworkManager.js";
@@ -19,10 +20,15 @@ async function startBackend(): Promise<number> {
 }
 
 async function main(): Promise<void> {
+  const { app } = await import("electron");
+  if (!process.env.MCSERVERGUI_DATA_DIR) {
+    process.env.MCSERVERGUI_DATA_DIR = path.join(app.getPath("userData"), "data");
+  }
+
   const port = await startBackend();
   process.env.MCSERVERGUI_PORT = String(port);
 
-  const { app, BrowserWindow, shell, Tray, Menu, nativeImage, dialog } = await import("electron");
+  const { BrowserWindow, shell, Tray, Menu, nativeImage, dialog } = await import("electron");
 
   const win = new BrowserWindow({
     width: 1280,
